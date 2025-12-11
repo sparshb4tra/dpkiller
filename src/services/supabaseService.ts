@@ -66,7 +66,11 @@ export const subscribeToRoom = (
         }
       }
     )
-    .subscribe();
+    .subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        // no-op; useful for debugging
+      }
+    });
 
   return () => {
     supabase.removeChannel(channel);
