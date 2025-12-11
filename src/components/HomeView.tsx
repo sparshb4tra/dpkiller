@@ -56,7 +56,7 @@ const HomeView: React.FC<HomeViewProps> = ({ onJoinRoom }) => {
               className="flex w-full max-w-3xl shadow-[0_8px_0_#000] border-2 border-[#1f1b1a] dark:border-[var(--border-muted)] rounded-lg overflow-hidden bg-[#fffaf0] dark:bg-[var(--bg-surface)]"
             >
               <span className="px-5 py-4 text-lg text-[#3b342f] dark:text-[var(--text-secondary)] bg-[#f0e7d8] dark:bg-[var(--bg-surface)] border-r-2 border-[#1f1b1a] dark:border-[var(--border-muted)]">
-                noteai.vercel.app/
+                n0teai.vercel.app/
               </span>
               <input
                 type="text"
