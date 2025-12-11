@@ -30,7 +30,14 @@ const HomeView: React.FC<HomeViewProps> = ({ onJoinRoom }) => {
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-[#f7f1e1] dark:bg-[var(--bg-page)] text-[#1f1b1a] dark:text-[var(--text-primary)] px-4">
-      <div className="flex justify-end pt-4 pr-2">
+      <div className="flex items-center justify-between pt-4 pr-2 pl-1 sm:pl-0 sticky top-0 z-10 bg-[#f7f1e1] dark:bg-[var(--bg-page)]">
+        <span className="text-lg font-extrabold tracking-tight">noteai</span>
+        <button
+          onClick={() => onJoinRoom(generateRoomId())}
+          className="text-xs sm:text-sm font-bold text-[var(--accent)] hover:opacity-80 transition-colors px-2 py-1"
+        >
+          Notes
+        </button>
         <button
           onClick={() => setIsDark(prev => !prev)}
           className="text-xs sm:text-sm font-bold text-[var(--accent)] hover:opacity-80 transition-colors px-2 py-1"
@@ -39,7 +46,7 @@ const HomeView: React.FC<HomeViewProps> = ({ onJoinRoom }) => {
           {isDark ? 'Light' : 'Dark'}
         </button>
       </div>
-      <div className="flex-1 w-full flex flex-col items-center justify-center pb-10 sm:pb-12">
+      <div className="flex-1 w-full flex flex-col items-center justify-start sm:justify-center pb-10 sm:pb-12 mt-8 sm:mt-0">
         <div className="w-full max-w-3xl space-y-8 sm:space-y-10 text-center px-2 sm:px-0">
           <div className="space-y-3">
             <h1 className="text-6xl sm:text-8xl tracking-tighter font-extrabold" style={{ letterSpacing: '-0.08em' }}>
