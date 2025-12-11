@@ -6,7 +6,7 @@
   --text-secondary: #475569;
   --border-muted: #e2e8f0;
   --accent: #0f172a;
-  --bubble-user-bg: #2563eb;
+  --bubble-user-bg: #1d4ed8;
   --bubble-user-text: #ffffff;
   --bubble-ai-bg: #e5e7eb;
   --bubble-ai-text: #0f172a;
@@ -141,7 +141,7 @@ body.dark .editor-meta {
 }
 
 .mobile-input-safe {
-  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  padding-bottom: max(24px, env(safe-area-inset-bottom) + 12px);
 }
 
 .resizer {

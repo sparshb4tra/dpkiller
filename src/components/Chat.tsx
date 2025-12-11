@@ -53,7 +53,7 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
   return (
     <div className="flex flex-col h-full bg-white dark:bg-[var(--bg-surface)] text-[var(--text-primary)]">
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-5">
+      <div className="flex-1 overflow-y-auto p-4 pb-32 sm:pb-5 space-y-5">
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-[var(--text-secondary)] text-sm p-8 text-center opacity-70">
              <p>Ask AI about your notes.</p>
@@ -98,7 +98,7 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
       </div>
 
       {/* Input Area */}
-      <div className="p-4 bg-white dark:bg-[var(--bg-surface)] border-t border-gray-200 dark:border-[var(--border-muted)] mobile-input-safe">
+      <div className="p-4 bg-white dark:bg-[var(--bg-surface)] border-t border-gray-200 dark:border-[var(--border-muted)] mobile-input-safe sticky bottom-0 z-10 shadow-sm sm:shadow-none">
         <form onSubmit={handleSubmit} className="relative flex gap-2">
           <input
             ref={inputRef}

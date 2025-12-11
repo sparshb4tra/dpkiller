@@ -3,8 +3,9 @@ import Header from './Header';
 import Editor from './Editor';
 import Chat from './Chat';
 import { RoomData, ChatMessage, MessageRole } from '../types';
-import { getRoom, saveRoom, subscribeToRoom, getClientIdentity } from '../services/storageService';
+import { getRoom as getRoomLocal, saveRoom as saveRoomLocal, subscribeToRoom as subscribeToRoomLocal, getClientIdentity } from '../services/storageService';
 import { streamAIResponse } from '../services/geminiService';
+import { hasSupabase, fetchRoom as fetchRoomRemote, saveRoom as saveRoomRemote, subscribeToRoom as subscribeToRoomRemote } from '../services/supabaseService';
 
 interface RoomViewProps {
   roomId: string;
@@ -50,19 +51,44 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
       document.documentElement.style.setProperty('--accent', pick);
     }
 
-    // 1. Load Initial Data
-    const roomData = getRoom(roomId);
-    setData(roomData);
-    setIsSaved(true);
+    let unsubscribeLocal: (() => void) | null = null;
+    let unsubscribeRemote: (() => void) | null = null;
 
-    // 2. Subscribe to changes from other tabs
-    const unsubscribe = subscribeToRoom(roomId, (newData) => {
-      setData(newData);
-      setIsSaved(true);
-    });
+    const load = async () => {
+      if (hasSupabase) {
+        const remote = await fetchRoomRemote(roomId);
+        if (remote) {
+          setData(remote);
+          setIsSaved(true);
+          saveRoomLocal(remote);
+        } else {
+          const fresh = getRoomLocal(roomId);
+          setData(fresh);
+          setIsSaved(true);
+          saveRoomLocal(fresh);
+          await saveRoomRemote(fresh);
+        }
+        unsubscribeRemote = subscribeToRoomRemote(roomId, (newData) => {
+          setData(newData);
+          setIsSaved(true);
+          saveRoomLocal(newData);
+        });
+      } else {
+        const roomData = getRoomLocal(roomId);
+        setData(roomData);
+        setIsSaved(true);
+        unsubscribeLocal = subscribeToRoomLocal(roomId, (newData) => {
+          setData(newData);
+          setIsSaved(true);
+        });
+      }
+    };
+
+    load();
 
     return () => {
-      unsubscribe();
+      if (unsubscribeLocal) unsubscribeLocal();
+      if (unsubscribeRemote) unsubscribeRemote();
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
   }, [roomId]);
@@ -127,7 +153,16 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
     });
   };
 
-  // Handle local content changes
+  const persistRoom = useCallback(async (room: RoomData) => {
+    if (hasSupabase) {
+      await saveRoomRemote(room);
+      saveRoomLocal(room);
+    } else {
+      saveRoomLocal(room);
+    }
+  }, []);
+
+  // Handle content changes
   const handleContentChange = useCallback((newContent: string) => {
     setIsSaved(false);
     setData(prev => {
@@ -142,13 +177,13 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
     saveTimeoutRef.current = setTimeout(() => {
       setData(currentData => {
         if (currentData) {
-          saveRoom(currentData);
+          persistRoom(currentData);
           setIsSaved(true);
         }
         return currentData;
       });
     }, 800);
-  }, []);
+  }, [persistRoom]);
 
   const handleSendMessage = async (text: string) => {
     if (!data) return;
@@ -165,7 +200,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
     // Optimistic Update
     const updatedData = { ...data, messages: [...data.messages, userMsg] };
     setData(updatedData);
-    saveRoom(updatedData); // Save immediately so other tabs see the chat
+    persistRoom(updatedData); // Save immediately so other tabs see the chat
     setIsAILoading(true);
 
     // Placeholder for AI
@@ -207,7 +242,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
             m.id === aiMsgId ? { ...m, isStreaming: false } : m
         );
         const finalData = { ...prev, messages: finalMessages };
-        saveRoom(finalData); // Save AI response
+        persistRoom(finalData); // Save AI response
         return finalData;
     });
   };
