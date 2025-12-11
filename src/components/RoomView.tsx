@@ -5,7 +5,7 @@ import Chat from './Chat';
 import { RoomData, ChatMessage, MessageRole } from '../types';
 import { getRoom as getRoomLocal, saveRoom as saveRoomLocal, subscribeToRoom as subscribeToRoomLocal, getClientIdentity } from '../services/storageService';
 import { streamAIResponse } from '../services/geminiService';
-import { hasSupabase, fetchRoom as fetchRoomRemote, saveRoom as saveRoomRemote, subscribeToRoom as subscribeToRoomRemote } from '../services/supabaseService';
+import { hasSupabase, fetchRoom as fetchRoomRemote, insertRoomIfMissing, updateRoom as updateRoomRemote, subscribeToRoom as subscribeToRoomRemote } from '../services/supabaseService';
 
 interface RoomViewProps {
   roomId: string;
@@ -13,7 +13,10 @@ interface RoomViewProps {
 }
 
 const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
-  const [data, setData] = useState<RoomData | null>(null);
+  const [data, setData] = useState<RoomData | null>(null); // localState (what UI sees)
+  const serverStateRef = useRef<RoomData | null>(null);
+  const pendingRef = useRef<RoomData | null>(null);
+  const lastSentRef = useRef<string>('');
   const [isCopied, setIsCopied] = useState(false);
   const [isAILoading, setIsAILoading] = useState(false);
   const [isSaved, setIsSaved] = useState(true);
@@ -32,7 +35,12 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
   // Ref for debouncing save
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize Room & Subscribe to Sync
+  const merge = useCallback((local: RoomData, incoming: RoomData) => {
+    if (!incoming) return local;
+    return incoming.updatedAt > local.updatedAt ? incoming : local;
+  }, []);
+
+  // Initialize Room & Subscribe to Sync with last-writer-wins
   useEffect(() => {
     const { id, label } = getClientIdentity();
     clientIdRef.current = id;
@@ -56,29 +64,50 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
 
     const load = async () => {
       if (hasSupabase) {
-        const remote = await fetchRoomRemote(roomId);
-        if (remote) {
-          setData(remote);
-          setIsSaved(true);
-          saveRoomLocal(remote);
-        } else {
-          const fresh = getRoomLocal(roomId);
-          setData(fresh);
-          setIsSaved(true);
-          saveRoomLocal(fresh);
-          await saveRoomRemote(fresh);
+        try {
+          const remote = await fetchRoomRemote(roomId);
+          if (remote) {
+            serverStateRef.current = remote;
+            pendingRef.current = remote;
+            lastSentRef.current = JSON.stringify(remote);
+            setData(remote);
+            setIsSaved(true);
+            saveRoomLocal(remote);
+          } else {
+            const fresh = getRoomLocal(roomId);
+            const withTs = { ...fresh, updatedAt: Date.now() };
+            serverStateRef.current = withTs;
+            pendingRef.current = withTs;
+            lastSentRef.current = '';
+            setData(withTs);
+            setIsSaved(true);
+            saveRoomLocal(withTs);
+            await insertRoomIfMissing(withTs);
+          }
+          unsubscribeRemote = subscribeToRoomRemote(roomId, (newData) => {
+            if (!newData) return;
+            const current = serverStateRef.current || newData;
+            const merged = merge(current, newData);
+            serverStateRef.current = merged;
+            setData(prev => {
+              if (!prev) return merged;
+              return merge(prev, merged);
+            });
+          });
+          console.info("Supabase realtime subscribed");
+        } catch (err) {
+          console.warn("Supabase load error", err);
+          const local = getRoomLocal(roomId);
+          setData(local);
         }
-        unsubscribeRemote = subscribeToRoomRemote(roomId, (newData) => {
-          setData(newData);
-          setIsSaved(true);
-          saveRoomLocal(newData);
-        });
       } else {
         const roomData = getRoomLocal(roomId);
+        serverStateRef.current = roomData;
+        pendingRef.current = roomData;
         setData(roomData);
         setIsSaved(true);
         unsubscribeLocal = subscribeToRoomLocal(roomId, (newData) => {
-          setData(newData);
+          setData(prev => merge(prev ?? newData, newData));
           setIsSaved(true);
         });
       }
@@ -91,7 +120,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
       if (unsubscribeRemote) unsubscribeRemote();
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [roomId]);
+  }, [roomId, merge]);
 
   // Theme handling
   useEffect(() => {
@@ -155,8 +184,20 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
 
   const persistRoom = useCallback(async (room: RoomData) => {
     if (hasSupabase) {
-      await saveRoomRemote(room);
-      saveRoomLocal(room);
+      const payload = { ...room, updatedAt: Date.now() };
+      const serialized = JSON.stringify({ content: payload.content, messages: payload.messages, updatedAt: payload.updatedAt });
+      if (serialized === lastSentRef.current) {
+        return;
+      }
+      lastSentRef.current = serialized;
+      pendingRef.current = payload;
+      saveRoomLocal(payload);
+      try {
+        await updateRoomRemote(payload);
+        serverStateRef.current = payload;
+      } catch (err) {
+        console.warn("Persist failed, will retry on next edit", err);
+      }
     } else {
       saveRoomLocal(room);
     }

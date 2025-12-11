@@ -24,22 +24,33 @@ export const fetchRoom = async (roomId: string): Promise<RoomData | null> => {
     .from("rooms")
     .select("*")
     .eq("id", roomId)
-    .single();
+    .limit(1)
+    .maybeSingle();
 
   if (error) {
     console.warn("Supabase fetchRoom error", error.message);
     return null;
   }
-  return data as RoomData;
+  return data as RoomData | null;
 };
 
-export const saveRoom = async (room: RoomData): Promise<void> => {
+export const insertRoomIfMissing = async (room: RoomData): Promise<void> => {
+  const supabase = getClient();
+  if (!supabase) return;
+  const { error } = await supabase.from("rooms").insert({ ...room, updatedAt: Date.now() }).select("id");
+  if (error && error.code !== "23505") {
+    // 23505 = duplicate key, ignore
+    console.warn("Supabase insertRoomIfMissing error", error.message);
+  }
+};
+
+export const updateRoom = async (room: RoomData): Promise<void> => {
   const supabase = getClient();
   if (!supabase) return;
   const payload = { ...room, updatedAt: Date.now() };
-  const { error } = await supabase.from("rooms").upsert(payload);
+  const { error } = await supabase.from("rooms").update(payload).eq("id", room.id);
   if (error) {
-    console.warn("Supabase saveRoom error", error.message);
+    console.warn("Supabase updateRoom error", error.message);
   }
 };
 
