@@ -8,6 +8,18 @@ let client: SupabaseClient | null = null;
 
 export const hasSupabase = Boolean(supabaseUrl && supabaseKey);
 
+// Health logging for debugging sync issues
+export const logSupabaseHealth = () => {
+  console.info("[Supabase Health]", {
+    envPresent: {
+      VITE_SUPABASE_URL: Boolean(supabaseUrl),
+      VITE_SUPABASE_ANON_KEY: Boolean(supabaseKey),
+    },
+    clientInitialized: Boolean(client),
+    hasSupabase,
+  });
+};
+
 const getClient = () => {
   if (!hasSupabase) return null;
   if (!client) {
@@ -47,8 +59,9 @@ export const insertRoomIfMissing = async (room: RoomData): Promise<void> => {
 export const updateRoom = async (room: RoomData): Promise<void> => {
   const supabase = getClient();
   if (!supabase) return;
-  const payload = { ...room, updatedAt: Date.now() };
-  const { error } = await supabase.from("rooms").update(payload).eq("id", room.id);
+  // IMPORTANT: Do NOT override updatedAt here - use the timestamp passed in from persistRoom
+  // This prevents echo loops where we receive our own update back via realtime
+  const { error } = await supabase.from("rooms").update(room).eq("id", room.id);
   if (error) {
     console.warn("Supabase updateRoom error", error.message);
   }
@@ -56,10 +69,14 @@ export const updateRoom = async (room: RoomData): Promise<void> => {
 
 export const subscribeToRoom = (
   roomId: string,
-  callback: (room: RoomData) => void
+  callback: (room: RoomData) => void,
+  onStatusChange?: (status: string) => void
 ) => {
   const supabase = getClient();
-  if (!supabase) return () => {};
+  if (!supabase) {
+    console.warn("[Supabase] Cannot subscribe - client not initialized");
+    return () => {};
+  }
 
   const channel = supabase
     .channel(`room-${roomId}`)
@@ -73,17 +90,26 @@ export const subscribeToRoom = (
       },
       (payload) => {
         if (payload.new) {
-          callback(payload.new as RoomData);
+          const incoming = payload.new as RoomData;
+          console.info("[Supabase Realtime] Payload received", {
+            roomId,
+            updatedAt: incoming.updatedAt,
+            lastEditor: incoming.lastEditor,
+            eventType: payload.eventType,
+          });
+          callback(incoming);
         }
       }
     )
     .subscribe((status) => {
-      if (status === "SUBSCRIBED") {
-        // no-op; useful for debugging
+      console.info("[Supabase Realtime] Subscription status:", status, "for room:", roomId);
+      if (onStatusChange) {
+        onStatusChange(status);
       }
     });
 
   return () => {
+    console.info("[Supabase Realtime] Unsubscribing from room:", roomId);
     supabase.removeChannel(channel);
   };
 };

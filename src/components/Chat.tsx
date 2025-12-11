@@ -51,11 +51,11 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
   };
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-[var(--bg-surface)] text-[var(--text-primary)]">
+    <div className="flex flex-col h-full bg-white dark:bg-[var(--bg-surface)] text-[var(--text-primary)] overflow-hidden">
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 pb-32 sm:pb-5 space-y-5">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 pb-2 space-y-4 sm:space-y-5">
         {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-[var(--text-secondary)] text-sm p-8 text-center opacity-70">
+          <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-[var(--text-secondary)] text-sm p-6 sm:p-8 text-center opacity-70">
              <p>Ask AI about your notes.</p>
           </div>
         )}
@@ -73,9 +73,9 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
               <span className="text-[10px] uppercase tracking-wide text-gray-400">
                 {label}
               </span>
-              <div className={`bubble ${bubbleClass} max-w-[92%] shadow-sm`}>
+              <div className={`bubble ${bubbleClass} max-w-[88%] sm:max-w-[92%] shadow-sm`}>
                  <div
-                   className="bubble-content"
+                   className="bubble-content break-words"
                    dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
                  />
               </div>
@@ -97,14 +97,14 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
-      <div className="p-4 bg-white dark:bg-[var(--bg-surface)] border-t border-gray-200 dark:border-[var(--border-muted)] mobile-input-safe sticky bottom-0 z-10 shadow-sm sm:shadow-none">
-        <form onSubmit={handleSubmit} className="relative flex gap-2">
+      {/* Input Area - tight to messages, safe area padding for iOS */}
+      <div className="shrink-0 px-3 sm:px-4 pt-2 pb-3 bg-white dark:bg-[var(--bg-surface)] border-t border-gray-100 dark:border-[var(--border-muted)] safe-area-bottom">
+        <form onSubmit={handleSubmit} className="flex items-center gap-2 bg-gray-50 dark:bg-[var(--bg-page)] rounded-full px-4 py-2 border border-gray-200 dark:border-[var(--border-muted)] focus-within:border-[var(--accent)] transition-colors">
           <input
             ref={inputRef}
             type="text"
-            className="flex-1 chat-input border-b border-gray-200 dark:border-[var(--border-muted)] focus:border-[var(--accent)] py-2 text-sm focus:outline-none transition-colors placeholder:text-gray-400 dark:placeholder:text-[var(--text-secondary)] font-sans"
-            placeholder="Type a message..."
+            className="flex-1 bg-transparent text-sm focus:outline-none placeholder:text-gray-400 dark:placeholder:text-[var(--text-secondary)] text-[var(--text-primary)] min-w-0"
+            placeholder="Message..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={isLoading}
@@ -113,7 +113,7 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
           <button
             type="submit"
             disabled={!input.trim() || isLoading}
-            className="text-[var(--accent)] font-bold text-sm disabled:opacity-30 hover:opacity-70 transition-opacity"
+            className="text-[var(--accent)] font-semibold text-sm disabled:opacity-30 hover:opacity-70 transition-opacity shrink-0"
           >
             Send
           </button>

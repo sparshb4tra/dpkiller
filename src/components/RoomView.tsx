@@ -370,12 +370,12 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
         isNotesOpen={isNotesOpen}
       />
 
-      <div ref={containerRef} className="flex-1 flex overflow-hidden relative p-3 sm:p-4 lg:p-6 gap-4">
+      <div ref={containerRef} className="flex-1 flex overflow-hidden relative p-0 sm:p-4 lg:p-6 sm:gap-4">
         <div
-          className={`${isMobile ? '' : 'bg-white dark:bg-[var(--bg-surface)] border border-[var(--border-muted)] rounded-2xl shadow-lg'} h-full overflow-hidden transition-all duration-200`}
+          className={`${isMobile ? 'w-full' : 'bg-white dark:bg-[var(--bg-surface)] border border-[var(--border-muted)] rounded-2xl shadow-lg'} h-full overflow-hidden transition-all duration-200`}
           style={{
             flexBasis: isNotesOpen && !isMobile ? `${(1 - noteWidth) * 100}%` : '100%',
-            minWidth: '40%',
+            minWidth: isMobile ? '100%' : '40%',
           }}
         >
           <Chat 
