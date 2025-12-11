@@ -87,20 +87,28 @@ body {
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-wrap: break-word;
-  font-size: 0.95rem;
-  color: inherit; /* preserve bubble-specific text color (e.g., white on blue) */
+  color: inherit;
   max-width: 100%;
 }
 
+.bubble-content p {
+  margin: 0;
+}
+
+.bubble-content p + p {
+  margin-top: 0.5em;
+}
+
 .bubble-content code {
-  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  background: rgba(0,0,0,0.06);
-  padding: 2px 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: rgba(0,0,0,0.1);
+  padding: 2px 5px;
   border-radius: 4px;
+  font-size: 0.9em;
 }
 
 body.dark .bubble-content code {
-  background: rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.1);
 }
 
 .chat-input {
