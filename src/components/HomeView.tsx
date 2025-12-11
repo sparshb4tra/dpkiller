@@ -77,21 +77,15 @@ const HomeView: React.FC<HomeViewProps> = ({ onJoinRoom }) => {
         </div>
       </div>
 
-      <div className="text-sm text-[#6b5d53] dark:text-[var(--text-secondary)] flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 py-6 px-4 text-center sm:text-left">
-        <div className="flex items-center gap-2">
-          <button className="hover:text-[var(--accent)]" onClick={() => onJoinRoom('policy/privacy')}>Privacy Policy</button>
-          <span className="hidden sm:inline">·</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="hover:text-[var(--accent)]" onClick={() => onJoinRoom('policy/cookie')}>Cookie Policy</button>
-          <span className="hidden sm:inline">·</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="hover:text-[var(--accent)]" onClick={() => onJoinRoom('policy/content')}>Content Policy</button>
-          <span className="hidden sm:inline">·</span>
-        </div>
-        <a className="hover:text-[var(--accent)]" href="https://sbatra.xyz" target="_blank" rel="noreferrer">© 2025 Sparsh</a>
-      </div>
+      <div className="text-sm text-[#6b5d53] dark:text-[var(--text-secondary)] flex flex-wrap items-center justify-center gap-2 py-6 px-4">
+  <button className="hover:text-[var(--accent)]" onClick={() => onJoinRoom('policy/privacy')}>Privacy Policy</button>
+  <span>·</span>
+  <button className="hover:text-[var(--accent)]" onClick={() => onJoinRoom('policy/cookie')}>Cookie Policy</button>
+  <span>·</span>
+  <button className="hover:text-[var(--accent)]" onClick={() => onJoinRoom('policy/content')}>Content Policy</button>
+  <span>·</span>
+  <a className="hover:text-[var(--accent)]" href="https://sbatra.xyz" target="_blank" rel="noreferrer">© 2025 Sparsh</a>
+</div>
     </div>
   );
 };
