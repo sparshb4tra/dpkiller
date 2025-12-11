@@ -23,7 +23,13 @@ export const logSupabaseHealth = () => {
 const getClient = () => {
   if (!hasSupabase) return null;
   if (!client) {
-    client = createClient(supabaseUrl!, supabaseKey!);
+    client = createClient(supabaseUrl!, supabaseKey!, {
+      realtime: {
+        params: {
+          eventsPerSecond: 10,
+        },
+      },
+    });
   }
   return client;
 };
@@ -36,50 +42,55 @@ export const fetchRoom = async (roomId: string): Promise<RoomData | null> => {
     .from("rooms")
     .select("*")
     .eq("id", roomId)
-    .limit(1)
     .maybeSingle();
 
   if (error) {
-    console.warn("Supabase fetchRoom error", error.message);
+    console.error("[Supabase] fetchRoom error:", error.message);
     return null;
   }
   return data as RoomData | null;
 };
 
-export const insertRoomIfMissing = async (room: RoomData): Promise<void> => {
+export const upsertRoom = async (room: RoomData): Promise<boolean> => {
   const supabase = getClient();
-  if (!supabase) return;
-  const { error } = await supabase.from("rooms").insert({ ...room, updatedAt: Date.now() }).select("id");
-  if (error && error.code !== "23505") {
-    // 23505 = duplicate key, ignore
-    console.warn("Supabase insertRoomIfMissing error", error.message);
+  if (!supabase) return false;
+
+  const { error } = await supabase
+    .from("rooms")
+    .upsert(room, { onConflict: "id" });
+
+  if (error) {
+    console.error("[Supabase] upsertRoom error:", error.message);
+    return false;
   }
+  return true;
+};
+
+// Legacy functions for compatibility
+export const insertRoomIfMissing = async (room: RoomData): Promise<void> => {
+  await upsertRoom(room);
 };
 
 export const updateRoom = async (room: RoomData): Promise<void> => {
-  const supabase = getClient();
-  if (!supabase) return;
-  // IMPORTANT: Do NOT override updatedAt here - use the timestamp passed in from persistRoom
-  // This prevents echo loops where we receive our own update back via realtime
-  const { error } = await supabase.from("rooms").update(room).eq("id", room.id);
-  if (error) {
-    console.warn("Supabase updateRoom error", error.message);
-  }
+  await upsertRoom(room);
 };
 
+// Simple realtime subscription - just broadcasts all changes
 export const subscribeToRoom = (
   roomId: string,
-  callback: (room: RoomData) => void,
-  onStatusChange?: (status: string) => void
+  onUpdate: (room: RoomData) => void,
+  onStatus?: (status: string) => void
 ) => {
   const supabase = getClient();
   if (!supabase) {
-    console.warn("[Supabase] Cannot subscribe - client not initialized");
+    console.warn("[Supabase] No client - cannot subscribe");
     return () => {};
   }
 
+  console.info("[Supabase] Subscribing to room:", roomId);
+
   const channel = supabase
-    .channel(`room-${roomId}`)
+    .channel(`room:${roomId}`)
     .on(
       "postgres_changes",
       {
@@ -89,28 +100,19 @@ export const subscribeToRoom = (
         filter: `id=eq.${roomId}`,
       },
       (payload) => {
-        if (payload.new) {
-          const incoming = payload.new as RoomData;
-          console.info("[Supabase Realtime] Payload received", {
-            roomId,
-            updatedAt: incoming.updatedAt,
-            lastEditor: incoming.lastEditor,
-            eventType: payload.eventType,
-          });
-          callback(incoming);
+        console.info("[Supabase] Realtime event:", payload.eventType);
+        if (payload.new && typeof payload.new === "object") {
+          onUpdate(payload.new as RoomData);
         }
       }
     )
-    .subscribe((status) => {
-      console.info("[Supabase Realtime] Subscription status:", status, "for room:", roomId);
-      if (onStatusChange) {
-        onStatusChange(status);
-      }
+    .subscribe((status, err) => {
+      console.info("[Supabase] Subscription status:", status, err || "");
+      if (onStatus) onStatus(status);
     });
 
   return () => {
-    console.info("[Supabase Realtime] Unsubscribing from room:", roomId);
+    console.info("[Supabase] Unsubscribing from room:", roomId);
     supabase.removeChannel(channel);
   };
 };
-

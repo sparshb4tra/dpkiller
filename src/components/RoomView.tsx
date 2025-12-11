@@ -5,7 +5,7 @@ import Chat from './Chat';
 import { RoomData, ChatMessage, MessageRole } from '../types';
 import { getRoom as getRoomLocal, saveRoom as saveRoomLocal, subscribeToRoom as subscribeToRoomLocal, getClientIdentity } from '../services/storageService';
 import { streamAIResponse } from '../services/geminiService';
-import { hasSupabase, fetchRoom as fetchRoomRemote, insertRoomIfMissing, updateRoom as updateRoomRemote, subscribeToRoom as subscribeToRoomRemote, logSupabaseHealth } from '../services/supabaseService';
+import { hasSupabase, fetchRoom, upsertRoom, subscribeToRoom as subscribeSupabase, logSupabaseHealth } from '../services/supabaseService';
 
 interface RoomViewProps {
   roomId: string;
@@ -13,44 +13,38 @@ interface RoomViewProps {
 }
 
 const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
-  const [data, setData] = useState<RoomData | null>(null); // localState (what UI sees)
-  const serverStateRef = useRef<RoomData | null>(null);
-  const pendingRef = useRef<RoomData | null>(null);
-  const lastSentRef = useRef<string>('');
+  const [data, setData] = useState<RoomData | null>(null);
   const [isCopied, setIsCopied] = useState(false);
   const [isAILoading, setIsAILoading] = useState(false);
   const [isSaved, setIsSaved] = useState(true);
   const [isNotesOpen, setIsNotesOpen] = useState(false);
-  const [noteWidth, setNoteWidth] = useState<number>(0.35); // fraction of container width
-  const clientIdRef = useRef<string>('');
-  const clientLabelRef = useRef<string>('');
-  const [isDark, setIsDark] = useState<boolean>(() => {
-    return localStorage.getItem('padai_theme') === 'dark';
-  });
+  const [noteWidth, setNoteWidth] = useState<number>(0.35);
+  const [isDark, setIsDark] = useState<boolean>(() => localStorage.getItem('padai_theme') === 'dark');
   const [accent, setAccent] = useState<string>('');
+  const [isMobile, setIsMobile] = useState<boolean>(() => window.innerWidth < 640);
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isResizingRef = useRef<boolean>(false);
-  const [isMobile, setIsMobile] = useState<boolean>(() => window.innerWidth < 640);
+  const clientIdRef = useRef<string>('');
+  const clientLabelRef = useRef<string>('');
   
-  // Ref for debouncing save
+  // DONTPAD-STYLE SYNC: Simple refs for tracking
+  const isTypingRef = useRef<boolean>(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedContentRef = useRef<string>('');
+  const lastSavedMessagesRef = useRef<string>('');
 
-  const merge = useCallback((local: RoomData, incoming: RoomData) => {
-    if (!incoming) return local;
-    return incoming.updatedAt > local.updatedAt ? incoming : local;
-  }, []);
-
-  // Initialize Room & Subscribe to Sync with last-writer-wins
+  // Initialize
   useEffect(() => {
     const { id, label } = getClientIdentity();
     clientIdRef.current = id;
     clientLabelRef.current = label;
 
-    // Health logging on load
-    console.info("[PadAI] Room init started", { roomId, clientId: id, hasSupabase });
+    console.info("[PadAI] Init", { roomId, clientId: id, hasSupabase });
     logSupabaseHealth();
 
-    // Accent handling
+    // Accent color
     const existingAccent = localStorage.getItem('padai_accent');
     if (existingAccent) {
       setAccent(existingAccent);
@@ -63,117 +57,84 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
       document.documentElement.style.setProperty('--accent', pick);
     }
 
-    let unsubscribeLocal: (() => void) | null = null;
-    let unsubscribeRemote: (() => void) | null = null;
+    let unsubscribe: (() => void) | null = null;
 
-    const load = async () => {
+    const init = async () => {
       if (hasSupabase) {
-        try {
-          const remote = await fetchRoomRemote(roomId);
-          console.info("[PadAI] Initial fetch result", { 
-            roomId, 
-            found: Boolean(remote), 
-            updatedAt: remote?.updatedAt 
-          });
-
-          if (remote) {
-            serverStateRef.current = remote;
-            pendingRef.current = remote;
-            lastSentRef.current = JSON.stringify({ content: remote.content, messages: remote.messages, updatedAt: remote.updatedAt });
-            setData(remote);
-            setIsSaved(true);
-            saveRoomLocal(remote);
-          } else {
-            const fresh = getRoomLocal(roomId);
-            const withTs = { ...fresh, updatedAt: Date.now() };
-            serverStateRef.current = withTs;
-            pendingRef.current = withTs;
-            lastSentRef.current = '';
-            setData(withTs);
-            setIsSaved(true);
-            saveRoomLocal(withTs);
-            await insertRoomIfMissing(withTs);
-            console.info("[PadAI] Created new room in Supabase", { roomId });
-          }
-
-          // Subscribe to realtime updates with improved stale detection
-          unsubscribeRemote = subscribeToRoomRemote(
-            roomId, 
-            (newData) => {
-              if (!newData) return;
-
-              const current = serverStateRef.current;
-              const localUpdatedAt = current?.updatedAt ?? 0;
-
-              // Ignore stale payloads (last-writer-wins)
-              if (newData.updatedAt <= localUpdatedAt) {
-                console.info("[PadAI] Ignoring stale payload", {
-                  incomingUpdatedAt: newData.updatedAt,
-                  localUpdatedAt,
-                });
-                return;
-              }
-
-              // Check if this update came from the same client (our own echo)
-              const isOwnUpdate = newData.lastEditor?.id === clientIdRef.current;
-              if (isOwnUpdate) {
-                // Still update serverStateRef to keep in sync, but avoid re-rendering
-                // since we already have this data locally
-                console.info("[PadAI] Own update received via realtime, updating server ref only");
-                serverStateRef.current = newData;
-                return;
-              }
-
-              console.info("[PadAI] Applying remote update", {
-                updatedAt: newData.updatedAt,
-                lastEditor: newData.lastEditor,
-              });
-
-              serverStateRef.current = newData;
-              saveRoomLocal(newData); // Cache locally
-              setData(newData);
-              setIsSaved(true);
-            },
-            (status) => {
-              console.info("[PadAI] Realtime subscription status:", status);
-            }
-          );
-        } catch (err) {
-          console.warn("[PadAI] Supabase load error", err);
-          const local = getRoomLocal(roomId);
-          setData(local);
+        // 1. Fetch initial data
+        let room = await fetchRoom(roomId);
+        
+        if (!room) {
+          // Create new room
+          room = getRoomLocal(roomId);
+          room.updatedAt = Date.now();
+          await upsertRoom(room);
+          console.info("[PadAI] Created new room");
         }
-      } else {
-        console.info("[PadAI] No Supabase config, using localStorage only");
-        const roomData = getRoomLocal(roomId);
-        serverStateRef.current = roomData;
-        pendingRef.current = roomData;
-        setData(roomData);
+
+        setData(room);
+        saveRoomLocal(room);
+        lastSavedContentRef.current = room.content;
+        lastSavedMessagesRef.current = JSON.stringify(room.messages);
         setIsSaved(true);
-        unsubscribeLocal = subscribeToRoomLocal(roomId, (newData) => {
-          setData(prev => merge(prev ?? newData, newData));
-          setIsSaved(true);
+
+        // 2. Subscribe to realtime updates - DONTPAD STYLE: just apply if not typing
+        unsubscribe = subscribeSupabase(
+          roomId,
+          (incoming) => {
+            console.info("[PadAI] Received update", { 
+              isTyping: isTypingRef.current,
+              incomingUpdatedAt: incoming.updatedAt 
+            });
+
+            // DONTPAD LOGIC: Only apply remote updates when NOT actively typing
+            // This prevents cursor jumping while you type
+            if (!isTypingRef.current) {
+              console.info("[PadAI] Applying remote update");
+              setData(incoming);
+              saveRoomLocal(incoming);
+              lastSavedContentRef.current = incoming.content;
+              lastSavedMessagesRef.current = JSON.stringify(incoming.messages);
+              setIsSaved(true);
+            } else {
+              console.info("[PadAI] Skipping remote update - user is typing");
+            }
+          },
+          (status) => {
+            console.info("[PadAI] Realtime status:", status);
+          }
+        );
+      } else {
+        // Local only mode
+        const room = getRoomLocal(roomId);
+        setData(room);
+        setIsSaved(true);
+        
+        unsubscribe = subscribeToRoomLocal(roomId, (incoming) => {
+          if (!isTypingRef.current) {
+            setData(incoming);
+            setIsSaved(true);
+          }
         });
       }
     };
 
-    load();
+    init();
 
     return () => {
-      if (unsubscribeLocal) unsubscribeLocal();
-      if (unsubscribeRemote) unsubscribeRemote();
+      if (unsubscribe) unsubscribe();
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     };
-  }, [roomId, merge]);
+  }, [roomId]);
 
   // Theme handling
   useEffect(() => {
-    const body = document.body;
     if (isDark) {
-      body.classList.add('dark');
+      document.body.classList.add('dark');
       localStorage.setItem('padai_theme', 'dark');
     } else {
-      body.classList.remove('dark');
+      document.body.classList.remove('dark');
       localStorage.setItem('padai_theme', 'light');
     }
   }, [isDark]);
@@ -181,19 +142,17 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
   // Mobile detection
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 640);
-    handler();
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, []);
 
-  // Drag-to-resize handlers
+  // Resize handlers
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizingRef.current || !containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      const fraction = (rect.right - e.clientX) / rect.width; // portion for notes on the right
-      const clamped = Math.min(0.7, Math.max(0.2, fraction));
-      setNoteWidth(clamped);
+      const fraction = (rect.right - e.clientX) / rect.width;
+      setNoteWidth(Math.min(0.7, Math.max(0.2, fraction)));
     };
 
     const handleMouseUp = () => {
@@ -226,91 +185,95 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
     });
   };
 
-  const persistRoom = useCallback(async (room: RoomData) => {
+  // DONTPAD-STYLE: Save to server with debounce
+  const saveToServer = useCallback(async (roomData: RoomData) => {
+    const contentChanged = roomData.content !== lastSavedContentRef.current;
+    const messagesChanged = JSON.stringify(roomData.messages) !== lastSavedMessagesRef.current;
+
+    if (!contentChanged && !messagesChanged) {
+      console.info("[PadAI] No changes to save");
+      setIsSaved(true);
+      return;
+    }
+
+    const payload: RoomData = {
+      ...roomData,
+      updatedAt: Date.now(),
+      lastEditor: { id: clientIdRef.current, label: clientLabelRef.current }
+    };
+
+    console.info("[PadAI] Saving to server...");
+    
     if (hasSupabase) {
-      // Create payload with new timestamp and current client as lastEditor
-      const payload: RoomData = { 
-        ...room, 
-        updatedAt: Date.now(),
-        lastEditor: { id: clientIdRef.current, label: clientLabelRef.current }
-      };
-
-      // Compare content and messages only (not timestamp) to avoid unnecessary updates
-      const contentKey = JSON.stringify({ content: payload.content, messages: payload.messages });
-      const lastContentKey = lastSentRef.current ? JSON.parse(lastSentRef.current) : null;
-      const lastContent = lastContentKey ? JSON.stringify({ content: lastContentKey.content, messages: lastContentKey.messages }) : '';
-      
-      if (contentKey === lastContent) {
-        console.info("[PadAI] Skip persist - content unchanged");
-        return;
-      }
-
-      // Store full serialized for future reference
-      lastSentRef.current = JSON.stringify({ content: payload.content, messages: payload.messages, updatedAt: payload.updatedAt });
-      pendingRef.current = payload;
-      saveRoomLocal(payload);
-
-      console.info("[PadAI] Persisting to Supabase", { 
-        roomId: room.id, 
-        updatedAt: payload.updatedAt,
-        clientId: clientIdRef.current 
-      });
-
-      try {
-        await updateRoomRemote(payload);
-        serverStateRef.current = payload;
-        console.info("[PadAI] Persist successful");
-      } catch (err) {
-        console.warn("[PadAI] Persist failed, will retry on next edit", err);
+      const success = await upsertRoom(payload);
+      if (success) {
+        lastSavedContentRef.current = payload.content;
+        lastSavedMessagesRef.current = JSON.stringify(payload.messages);
+        setIsSaved(true);
+        console.info("[PadAI] Saved successfully");
+      } else {
+        console.error("[PadAI] Save failed");
       }
     } else {
-      const payload = { ...room, updatedAt: Date.now() };
       saveRoomLocal(payload);
+      lastSavedContentRef.current = payload.content;
+      lastSavedMessagesRef.current = JSON.stringify(payload.messages);
+      setIsSaved(true);
     }
   }, []);
 
-  // Handle content changes
+  // DONTPAD-STYLE: Handle content changes with typing detection
   const handleContentChange = useCallback((newContent: string) => {
+    // Mark as typing - this blocks remote updates temporarily
+    isTypingRef.current = true;
+    
+    // Clear previous typing timeout
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    
+    // Set typing to false after 1.5s of no typing
+    typingTimeoutRef.current = setTimeout(() => {
+      isTypingRef.current = false;
+      console.info("[PadAI] Typing stopped");
+    }, 1500);
+
+    // Update local state immediately
     setIsSaved(false);
     setData(prev => {
       if (!prev) return null;
-      const updated = { ...prev, content: newContent, lastEditor: { id: clientIdRef.current, label: clientLabelRef.current } };
-      return updated;
+      return { ...prev, content: newContent };
     });
-    
-    // Debounce Save
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    
-    saveTimeoutRef.current = setTimeout(() => {
-      setData(currentData => {
-        if (currentData) {
-          persistRoom(currentData);
-          setIsSaved(true);
-        }
-        return currentData;
-      });
-    }, 800);
-  }, [persistRoom]);
 
+    // Debounce save (300ms like Dontpad)
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      setData(current => {
+        if (current) saveToServer(current);
+        return current;
+      });
+    }, 300);
+  }, [saveToServer]);
+
+  // Handle chat messages
   const handleSendMessage = async (text: string) => {
     if (!data) return;
 
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: MessageRole.USER,
-      text: text,
+      text,
       timestamp: Date.now(),
       senderId: clientIdRef.current,
       senderLabel: clientLabelRef.current || 'Guest'
     };
 
-    // Optimistic Update
-    const updatedData = { ...data, messages: [...data.messages, userMsg] };
-    setData(updatedData);
-    persistRoom(updatedData); // Save immediately so other tabs see the chat
+    // Add user message and save
+    const withUserMsg = { ...data, messages: [...data.messages, userMsg] };
+    setData(withUserMsg);
+    await saveToServer(withUserMsg);
+    
     setIsAILoading(true);
 
-    // Placeholder for AI
+    // AI placeholder
     const aiMsgId = (Date.now() + 1).toString();
     const placeholderAiMsg: ChatMessage = {
       id: aiMsgId,
@@ -324,43 +287,45 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
 
     setData(prev => prev ? { ...prev, messages: [...prev.messages, placeholderAiMsg] } : null);
 
-    // Stream
+    // Stream AI response
     await streamAIResponse(
-      updatedData.messages, 
-      updatedData.content, 
-      text, 
+      withUserMsg.messages,
+      withUserMsg.content,
+      text,
       (chunkText) => {
         setData(prev => {
-            if (!prev) return null;
-            const newMessages = prev.messages.map(m => 
-                m.id === aiMsgId ? { ...m, text: chunkText } : m
-            );
-            return { ...prev, messages: newMessages };
+          if (!prev) return null;
+          return {
+            ...prev,
+            messages: prev.messages.map(m => m.id === aiMsgId ? { ...m, text: chunkText } : m)
+          };
         });
       }
     );
 
     setIsAILoading(false);
-    
-    // Finalize
+
+    // Finalize AI message and save
     setData(prev => {
-        if (!prev) return null;
-        const finalMessages = prev.messages.map(m => 
-            m.id === aiMsgId ? { ...m, isStreaming: false } : m
-        );
-        const finalData = { ...prev, messages: finalMessages };
-        persistRoom(finalData); // Save AI response
-        return finalData;
+      if (!prev) return null;
+      const finalMessages = prev.messages.map(m =>
+        m.id === aiMsgId ? { ...m, isStreaming: false } : m
+      );
+      const finalData = { ...prev, messages: finalMessages };
+      saveToServer(finalData);
+      return finalData;
     });
   };
 
-  if (!data) return <div className="h-screen flex items-center justify-center font-sans">Loading...</div>;
+  if (!data) {
+    return <div className="h-screen flex items-center justify-center font-sans">Loading...</div>;
+  }
 
   return (
     <div className="flex flex-col h-screen w-full app-shell relative">
-      <Header 
-        roomId={roomId} 
-        onCopyLink={handleCopyLink} 
+      <Header
+        roomId={roomId}
+        onCopyLink={handleCopyLink}
         showCopied={isCopied}
         onNewRoom={navigateHome}
         isSaved={isSaved}
@@ -378,9 +343,9 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
             minWidth: isMobile ? '100%' : '40%',
           }}
         >
-          <Chat 
-            messages={data.messages} 
-            onSendMessage={handleSendMessage} 
+          <Chat
+            messages={data.messages}
+            onSendMessage={handleSendMessage}
             isLoading={isAILoading}
             clientId={clientIdRef.current}
           />
