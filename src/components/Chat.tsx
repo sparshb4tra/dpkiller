@@ -79,13 +79,13 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
                 )}
                 {/* Bubble - iMessage style */}
                 <div
-                  className={`
-                    px-3 py-2 text-[15px] leading-relaxed break-words
-                    ${isUser 
-                      ? 'bg-[var(--accent)] text-white rounded-2xl rounded-br-md' 
-                      : 'bg-gray-100 dark:bg-gray-800 text-[var(--text-primary)] rounded-2xl rounded-bl-md'
-                    }
-                  `}
+                  className="px-3 py-2 text-[15px] leading-relaxed break-words rounded-2xl"
+                  style={{
+                    backgroundColor: isUser ? 'var(--accent)' : 'var(--bubble-ai-bg)',
+                    color: isUser ? 'white' : 'var(--bubble-ai-text)',
+                    borderBottomRightRadius: isUser ? '6px' : undefined,
+                    borderBottomLeftRadius: !isUser ? '6px' : undefined,
+                  }}
                 >
                   <div
                     className="bubble-content"
