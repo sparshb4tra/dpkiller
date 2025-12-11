@@ -50,24 +50,24 @@ const HomeView: React.FC<HomeViewProps> = ({ onJoinRoom }) => {
             </p>
           </div>
 
-          <div className="flex flex-col gap-4 items-center font-mono">
+          <div className="flex flex-col gap-4 items-center font-mono w-full px-1 sm:px-0">
             <form
               onSubmit={handleSubmit}
               className="flex w-full max-w-3xl shadow-[0_8px_0_#000] border-2 border-[#1f1b1a] dark:border-[var(--border-muted)] rounded-lg overflow-hidden bg-[#fffaf0] dark:bg-[var(--bg-surface)]"
             >
-              <span className="px-5 py-4 text-lg text-[#3b342f] dark:text-[var(--text-secondary)] bg-[#f0e7d8] dark:bg-[var(--bg-surface)] border-r-2 border-[#1f1b1a] dark:border-[var(--border-muted)]">
+              <span className="px-4 sm:px-5 py-4 text-base sm:text-lg text-[#3b342f] dark:text-[var(--text-secondary)] bg-[#f0e7d8] dark:bg-[var(--bg-surface)] border-r-2 border-[#1f1b1a] dark:border-[var(--border-muted)] whitespace-nowrap">
                 n0teai.vercel.app/
               </span>
               <input
                 type="text"
                 placeholder="room-name-or-make-one-up"
-                className="flex-1 bg-transparent py-4 px-5 text-lg text-[#1f1b1a] dark:text-[var(--text-primary)] focus:outline-none placeholder:text-[#8c8178] dark:placeholder:text-[var(--text-secondary)]"
+                className="flex-1 bg-transparent py-4 px-4 sm:px-5 text-base sm:text-lg text-[#1f1b1a] dark:text-[var(--text-primary)] focus:outline-none placeholder:text-[#8c8178] dark:placeholder:text-[var(--text-secondary)]"
                 value={inputRoom}
                 onChange={(e) => setInputRoom(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
               />
               <button
                 type="submit"
-                className="px-8 py-4 text-lg font-bold text-white bg-[var(--accent)] hover:opacity-90 transition-colors"
+                className="px-5 sm:px-8 py-4 text-base sm:text-lg font-bold text-white bg-[var(--accent)] hover:opacity-90 transition-colors"
               >
                 Go!
               </button>
