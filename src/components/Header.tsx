@@ -54,7 +54,7 @@ const Header: React.FC<HeaderProps> = ({
           {showCopied ? "Link Copied" : "Share"}
         </button>
         
-        <button
+        <button 
           onClick={onToggleTheme}
           className="text-xs sm:text-sm font-bold text-gray-900 transition-colors px-2"
           style={{ color: 'var(--accent)' }}

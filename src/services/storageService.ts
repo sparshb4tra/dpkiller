@@ -64,8 +64,9 @@ export const getRoom = (roomId: string): RoomData => {
 
 export const saveRoom = (room: RoomData): void => {
   const key = `${STORAGE_PREFIX}${room.id}`;
-  const toSave = { ...room, updatedAt: Date.now() };
-  localStorage.setItem(key, JSON.stringify(toSave));
+  // Use the existing updatedAt from room - do NOT override
+  // This keeps localStorage in sync with Supabase timestamps
+  localStorage.setItem(key, JSON.stringify(room));
 };
 
 export const generateRoomId = (): string => {

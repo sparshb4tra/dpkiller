@@ -5,7 +5,7 @@ import Chat from './Chat';
 import { RoomData, ChatMessage, MessageRole } from '../types';
 import { getRoom as getRoomLocal, saveRoom as saveRoomLocal, subscribeToRoom as subscribeToRoomLocal, getClientIdentity } from '../services/storageService';
 import { streamAIResponse } from '../services/geminiService';
-import { hasSupabase, fetchRoom as fetchRoomRemote, insertRoomIfMissing, updateRoom as updateRoomRemote, subscribeToRoom as subscribeToRoomRemote } from '../services/supabaseService';
+import { hasSupabase, fetchRoom as fetchRoomRemote, insertRoomIfMissing, updateRoom as updateRoomRemote, subscribeToRoom as subscribeToRoomRemote, logSupabaseHealth } from '../services/supabaseService';
 
 interface RoomViewProps {
   roomId: string;
@@ -46,6 +46,10 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
     clientIdRef.current = id;
     clientLabelRef.current = label;
 
+    // Health logging on load
+    console.info("[PadAI] Room init started", { roomId, clientId: id, hasSupabase });
+    logSupabaseHealth();
+
     // Accent handling
     const existingAccent = localStorage.getItem('padai_accent');
     if (existingAccent) {
@@ -66,10 +70,16 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
       if (hasSupabase) {
         try {
           const remote = await fetchRoomRemote(roomId);
+          console.info("[PadAI] Initial fetch result", { 
+            roomId, 
+            found: Boolean(remote), 
+            updatedAt: remote?.updatedAt 
+          });
+
           if (remote) {
             serverStateRef.current = remote;
             pendingRef.current = remote;
-            lastSentRef.current = JSON.stringify(remote);
+            lastSentRef.current = JSON.stringify({ content: remote.content, messages: remote.messages, updatedAt: remote.updatedAt });
             setData(remote);
             setIsSaved(true);
             saveRoomLocal(remote);
@@ -83,24 +93,58 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
             setIsSaved(true);
             saveRoomLocal(withTs);
             await insertRoomIfMissing(withTs);
+            console.info("[PadAI] Created new room in Supabase", { roomId });
           }
-          unsubscribeRemote = subscribeToRoomRemote(roomId, (newData) => {
-            if (!newData) return;
-            const current = serverStateRef.current || newData;
-            const merged = merge(current, newData);
-            serverStateRef.current = merged;
-            setData(prev => {
-              if (!prev) return merged;
-              return merge(prev, merged);
-            });
-          });
-          console.info("Supabase realtime subscribed");
+
+          // Subscribe to realtime updates with improved stale detection
+          unsubscribeRemote = subscribeToRoomRemote(
+            roomId, 
+            (newData) => {
+              if (!newData) return;
+
+              const current = serverStateRef.current;
+              const localUpdatedAt = current?.updatedAt ?? 0;
+
+              // Ignore stale payloads (last-writer-wins)
+              if (newData.updatedAt <= localUpdatedAt) {
+                console.info("[PadAI] Ignoring stale payload", {
+                  incomingUpdatedAt: newData.updatedAt,
+                  localUpdatedAt,
+                });
+                return;
+              }
+
+              // Check if this update came from the same client (our own echo)
+              const isOwnUpdate = newData.lastEditor?.id === clientIdRef.current;
+              if (isOwnUpdate) {
+                // Still update serverStateRef to keep in sync, but avoid re-rendering
+                // since we already have this data locally
+                console.info("[PadAI] Own update received via realtime, updating server ref only");
+                serverStateRef.current = newData;
+                return;
+              }
+
+              console.info("[PadAI] Applying remote update", {
+                updatedAt: newData.updatedAt,
+                lastEditor: newData.lastEditor,
+              });
+
+              serverStateRef.current = newData;
+              saveRoomLocal(newData); // Cache locally
+              setData(newData);
+              setIsSaved(true);
+            },
+            (status) => {
+              console.info("[PadAI] Realtime subscription status:", status);
+            }
+          );
         } catch (err) {
-          console.warn("Supabase load error", err);
+          console.warn("[PadAI] Supabase load error", err);
           const local = getRoomLocal(roomId);
           setData(local);
         }
       } else {
+        console.info("[PadAI] No Supabase config, using localStorage only");
         const roomData = getRoomLocal(roomId);
         serverStateRef.current = roomData;
         pendingRef.current = roomData;
@@ -184,22 +228,44 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
 
   const persistRoom = useCallback(async (room: RoomData) => {
     if (hasSupabase) {
-      const payload = { ...room, updatedAt: Date.now() };
-      const serialized = JSON.stringify({ content: payload.content, messages: payload.messages, updatedAt: payload.updatedAt });
-      if (serialized === lastSentRef.current) {
+      // Create payload with new timestamp and current client as lastEditor
+      const payload: RoomData = { 
+        ...room, 
+        updatedAt: Date.now(),
+        lastEditor: { id: clientIdRef.current, label: clientLabelRef.current }
+      };
+
+      // Compare content and messages only (not timestamp) to avoid unnecessary updates
+      const contentKey = JSON.stringify({ content: payload.content, messages: payload.messages });
+      const lastContentKey = lastSentRef.current ? JSON.parse(lastSentRef.current) : null;
+      const lastContent = lastContentKey ? JSON.stringify({ content: lastContentKey.content, messages: lastContentKey.messages }) : '';
+      
+      if (contentKey === lastContent) {
+        console.info("[PadAI] Skip persist - content unchanged");
         return;
       }
-      lastSentRef.current = serialized;
+
+      // Store full serialized for future reference
+      lastSentRef.current = JSON.stringify({ content: payload.content, messages: payload.messages, updatedAt: payload.updatedAt });
       pendingRef.current = payload;
       saveRoomLocal(payload);
+
+      console.info("[PadAI] Persisting to Supabase", { 
+        roomId: room.id, 
+        updatedAt: payload.updatedAt,
+        clientId: clientIdRef.current 
+      });
+
       try {
         await updateRoomRemote(payload);
         serverStateRef.current = payload;
+        console.info("[PadAI] Persist successful");
       } catch (err) {
-        console.warn("Persist failed, will retry on next edit", err);
+        console.warn("[PadAI] Persist failed, will retry on next edit", err);
       }
     } else {
-      saveRoomLocal(room);
+      const payload = { ...room, updatedAt: Date.now() };
+      saveRoomLocal(payload);
     }
   }, []);
 
