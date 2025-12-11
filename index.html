@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" sizes="128x128" href="https://icons.iconarchive.com/icons/google/noto-emoji-objects/128/62923-spiral-notepad-icon.png" />
+    <link rel="apple-touch-icon" href="https://icons.iconarchive.com/icons/google/noto-emoji-objects/128/62923-spiral-notepad-icon.png" />
+    <title>noteai</title>
+    <meta name="description" content="noteai — share AI chats + notes in one URL. No login required." />
+    <meta property="og:title" content="noteai — AI chat + notes" />
+    <meta property="og:description" content="A minimal, URL-based collaborative pad with AI context awareness. No logins, instant sharing." />
+    <meta property="og:image" content="/site-preview.PNG" />
+    <meta property="og:url" content="https://noteai.vercel.app" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --font-main: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      }
+      body {
+        font-family: var(--font-main);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      
+      /* Custom scrollbar for cleaner look */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #d1d5db;
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #9ca3af;
+      }
+
+      .helvetica-bold {
+        font-family: var(--font-main);
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body class="bg-white text-gray-900 h-screen overflow-hidden selection:bg-yellow-200 selection:text-black">
+    <div id="root" class="h-full"></div>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>

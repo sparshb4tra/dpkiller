@@ -1,0 +1,5 @@
+{
+  "name": "PadAI",
+  "description": "A lightweight, URL-based, auto-saving text pad with integrated AI chat context awareness.",
+  "requestFramePermissions": []
+}

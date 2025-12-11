@@ -1,0 +1,159 @@
+/* Global minimalist theming for the typing page */
+:root {
+  --bg-page: #f8fafc;
+  --bg-surface: #ffffff;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --border-muted: #e2e8f0;
+  --accent: #0f172a;
+  --bubble-user-bg: #2563eb;
+  --bubble-user-text: #ffffff;
+  --bubble-ai-bg: #e5e7eb;
+  --bubble-ai-text: #0f172a;
+  --bubble-guest-bg: #ffffff;
+  --bubble-guest-text: #0f172a;
+}
+
+body.dark {
+  --bg-page: #0b1220;
+  --bg-surface: #111827;
+  --text-primary: #e5e7eb;
+  --text-secondary: #9ca3af;
+  --border-muted: #1f2937;
+  --accent: #60a5fa;
+  --bubble-user-bg: #3b82f6;
+  --bubble-user-text: #ffffff;
+  --bubble-ai-bg: #1f2937;
+  --bubble-ai-text: #e5e7eb;
+  --bubble-guest-bg: #0f172a;
+  --bubble-guest-text: #e5e7eb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  background: var(--bg-page);
+}
+
+.app-shell {
+  background: var(--bg-page);
+  color: var(--text-primary);
+}
+
+.bubble {
+  padding: 10px 14px;
+  border-radius: 14px;
+  line-height: 1.55;
+}
+
+.bubble-user {
+  background: var(--bubble-user-bg);
+  color: var(--bubble-user-text);
+  border: 1px solid transparent;
+  border-top-right-radius: 4px;
+}
+
+.bubble-ai {
+  background: var(--bubble-ai-bg);
+  color: var(--bubble-ai-text);
+  border: 1px solid var(--border-muted);
+  border-top-left-radius: 4px;
+}
+
+.bubble-guest {
+  background: var(--bubble-guest-bg);
+  color: var(--bubble-guest-text);
+  border: 1px solid var(--border-muted);
+  border-top-left-radius: 4px;
+}
+
+.bubble-content {
+  white-space: pre-wrap;
+  font-size: 0.95rem;
+  color: inherit; /* preserve bubble-specific text color (e.g., white on blue) */
+}
+
+.bubble-content code {
+  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  background: rgba(0,0,0,0.06);
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+body.dark .bubble-content code {
+  background: rgba(255,255,255,0.08);
+}
+
+.chat-input {
+  background: white;
+  color: #0f172a;
+}
+
+body.dark .chat-input {
+  background: #0f1828;
+  color: var(--text-primary);
+}
+
+.editor-surface {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-muted);
+  border-radius: 12px;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.06);
+}
+
+.editor-textarea {
+  background: transparent;
+  color: var(--text-primary);
+  caret-color: var(--accent);
+  position: relative;
+}
+
+.editor-textarea::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+
+.editor-meta {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 12px;
+  padding: 6px 10px;
+  background: rgba(0,0,0,0.04);
+  color: var(--text-secondary);
+  border-bottom-left-radius: 10px;
+}
+
+body.dark .editor-meta {
+  background: rgba(255,255,255,0.04);
+}
+
+.mobile-input-safe {
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+.resizer {
+  width: 10px;
+  cursor: col-resize;
+  background: linear-gradient(to right, transparent, var(--border-muted), transparent);
+  transition: background 0.2s ease, opacity 0.2s ease;
+  opacity: 0.8;
+}
+
+.resizer:hover {
+  background: linear-gradient(to right, transparent, var(--accent), transparent);
+  opacity: 1;
+}
+
