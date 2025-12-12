@@ -28,7 +28,7 @@ const Header: React.FC<HeaderProps> = ({
   onlineCount = 0,
 }) => {
   return (
-    <header className="h-14 border-b border-gray-200 dark:border-[var(--border-muted)] flex items-center justify-between px-3 sm:px-4 bg-white dark:bg-[var(--bg-surface)] shrink-0 z-30 sticky top-0">
+    <header className="fixed top-0 left-0 right-0 h-14 border-b border-gray-200 dark:border-[var(--border-muted)] flex items-center justify-between px-3 sm:px-4 bg-white dark:bg-[var(--bg-surface)] z-30">
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
         {/* Logo - Compact on mobile */}
         <div 

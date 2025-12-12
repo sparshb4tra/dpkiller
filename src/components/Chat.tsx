@@ -83,9 +83,9 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
       {/* Messages Scroll Area */}
       <div 
         ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-4 space-y-4"
+        className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 space-y-4"
         style={{
-          // Add padding bottom equal to input height + keyboard
+          // Only add bottom padding for the input area, header is handled by parent margin
           paddingBottom: keyboardHeight > 0 ? '80px' : '80px', 
         }}
       >
@@ -156,12 +156,14 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
       <div 
         className="absolute bottom-0 left-0 right-0 bg-white dark:bg-[var(--bg-surface)] border-t border-gray-100 dark:border-[var(--border-muted)] z-20"
         style={{
-          // Adjust for keyboard on mobile if needed, though visualViewport usually handles the layout resize
-          // If using resize strategy, the container height shrinks, so bottom-0 is correct.
-          paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+          // Use fixed positioning relative to visual viewport when keyboard is open
+          position: keyboardHeight > 0 ? 'fixed' : 'absolute',
+          bottom: keyboardHeight > 0 ? `${keyboardHeight}px` : '0',
+          paddingBottom: keyboardHeight > 0 ? '12px' : 'max(16px, env(safe-area-inset-bottom))',
           paddingTop: '12px',
           paddingLeft: '16px',
           paddingRight: '16px',
+          width: '100%',
         }}
       >
         <form onSubmit={handleSubmit} className="flex items-end gap-2 max-w-4xl mx-auto">

@@ -365,7 +365,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
         onlineCount={onlineUsers.length}
       />
 
-      <div ref={containerRef} className="flex-1 flex overflow-hidden relative p-0 sm:p-4 lg:p-6 sm:gap-4">
+      <div ref={containerRef} className="flex-1 flex overflow-hidden relative p-0 sm:p-4 lg:p-6 sm:gap-4 mt-14">
         <div
           className={`${isMobile ? 'w-full' : 'bg-white dark:bg-[var(--bg-surface)] border border-[var(--border-muted)] rounded-2xl shadow-lg'} h-full overflow-hidden transition-all duration-200`}
           style={{
