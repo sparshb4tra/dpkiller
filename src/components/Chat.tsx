@@ -141,19 +141,23 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
         )}
         
         {messages.map((msg, index) => {
-          const isUser = msg.role === MessageRole.USER;
           const isAI = msg.role === MessageRole.MODEL;
-          const showLabel = index === 0 || messages[index - 1]?.role !== msg.role;
+          // A message is "mine" if I sent it (for styling)
+          const isMe = msg.senderId === clientId;
+          // Determine label: "You" if me, specific name if other user, "AI Assistant" if AI
+          const label = isAI ? 'AI Assistant' : (isMe ? 'You' : (msg.senderLabel || 'User'));
+          
+          const showLabel = index === 0 || messages[index - 1]?.senderId !== msg.senderId || messages[index - 1]?.role !== msg.role;
           
           return (
             <div
               key={msg.id}
-              className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} animate-in fade-in duration-300 slide-in-from-bottom-2`}
+              className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} animate-in fade-in duration-300 slide-in-from-bottom-2`}
             >
               {/* Label */}
                 {showLabel && (
-                <div className={`text-[11px] font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-1.5 px-1 uppercase ${isUser ? 'text-right' : 'text-left'}`}>
-                  {isAI ? 'AI Assistant' : 'You'}
+                <div className={`text-[11px] font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-1.5 px-1 uppercase ${isMe ? 'text-right' : 'text-left'}`}>
+                  {label}
                   </div>
                 )}
               
@@ -161,9 +165,12 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
                 <div
                 className={`
                   px-4 py-3 text-[15px] leading-relaxed break-words max-w-[85%] sm:max-w-[80%] shadow-sm
-                  ${isUser 
+                  ${isMe 
                     ? 'bg-[var(--accent)] text-white rounded-2xl rounded-tr-sm' 
-                    : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-100 dark:border-slate-700 rounded-2xl rounded-tl-sm'}
+                    : (isAI 
+                        ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-100 dark:border-slate-700 rounded-2xl rounded-tl-sm'
+                        : 'bg-slate-100 dark:bg-slate-700/50 text-slate-800 dark:text-slate-100 rounded-2xl rounded-tl-sm') // Style for other users
+                  }
                 `}
                 >
                   <div
