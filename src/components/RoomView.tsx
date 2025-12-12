@@ -5,7 +5,7 @@ import Chat from './Chat';
 import { RoomData, ChatMessage, MessageRole } from '../types';
 import { getRoom as getRoomLocal, saveRoom as saveRoomLocal, getClientIdentity } from '../services/storageService';
 import { streamAIResponse } from '../services/geminiService';
-import { RoomSyncChannel, hasSupabase, upsertRoom, createDefaultRoom } from '../services/syncService';
+import { RoomSyncChannel, hasSupabase, upsertRoom, createDefaultRoom, fetchRoom } from '../services/syncService';
 
 interface RoomViewProps {
   roomId: string;
@@ -51,16 +51,10 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
   const clientIdRef = useRef<string>('');
   const clientLabelRef = useRef<string>('');
   
-  // Sync refs - DONTPAD STYLE
+  // Sync refs
   const syncChannelRef = useRef<RoomSyncChannel | null>(null);
   const isTypingRef = useRef<boolean>(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const dataRef = useRef<RoomData | null>(null); // For accessing latest data in callbacks
-
-  // Keep dataRef in sync
-  useEffect(() => {
-    dataRef.current = data;
-  }, [data]);
 
   // ==================== INITIALIZATION ====================
   useEffect(() => {
@@ -85,44 +79,44 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
 
     const init = async () => {
       if (hasSupabase) {
-        // Create sync channel with callbacks
+        // Create sync channel
         const syncChannel = new RoomSyncChannel(
           roomId,
           id,
           label,
           {
-            // INSTANT content updates from other users
-            onContentUpdate: (content, senderId, senderLabel) => {
-              console.info("[PadAI] Content update from:", senderLabel);
+            // Called when room data changes (from database)
+            onRoomUpdate: (incomingRoom, isRemote) => {
+              if (!isRemote) return;
               
-              // DONTPAD LOGIC: Only apply if we're not typing
+              console.info("[PadAI] 📥 Remote update received");
+              
+              // Only update if we're not actively typing
               if (!isTypingRef.current) {
-                setData(prev => prev ? { ...prev, content } : null);
-                setLastEditor({ id: senderId, label: senderLabel });
+                setData(prev => {
+                  if (!prev) return incomingRoom;
+                  
+                  // Keep our streaming AI message if we have one
+                  const ourStreamingMsg = prev.messages.find(m => m.isStreaming);
+                  if (ourStreamingMsg) {
+                    const otherMsgs = incomingRoom.messages.filter(m => !m.isStreaming);
+                    return { 
+                      ...incomingRoom, 
+                      messages: [...otherMsgs, ourStreamingMsg] 
+                    };
+                  }
+                  
+                  return incomingRoom;
+                });
+                setLastEditor({ id: 'remote', label: 'Someone' });
               } else {
-                console.info("[PadAI] Skipping content update - user is typing");
+                console.info("[PadAI] Skipping update - user is typing");
               }
-            },
-
-            // INSTANT message updates from other users
-            onMessagesUpdate: (messages, senderId) => {
-              console.info("[PadAI] Messages update, count:", messages.length);
-              setData(prev => {
-                if (!prev) return null;
-                // Merge messages intelligently - keep our streaming message if any
-                const ourStreamingMsg = prev.messages.find(m => m.isStreaming && m.senderId === 'ai');
-                if (ourStreamingMsg) {
-                  // Keep our streaming message, but update non-streaming ones
-                  const otherMsgs = messages.filter(m => !m.isStreaming);
-                  return { ...prev, messages: [...otherMsgs, ourStreamingMsg] };
-                }
-                return { ...prev, messages };
-              });
             },
 
             // Presence updates
             onPresenceUpdate: (users) => {
-              setOnlineUsers(users.filter(u => u.id !== id)); // Exclude self
+              setOnlineUsers(users.filter(u => u.id !== id));
             },
 
             // Connection status
@@ -135,11 +129,11 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
 
         syncChannelRef.current = syncChannel;
 
-        // Connect and fetch initial data
+        // Connect and get initial data
         let room = await syncChannel.connect();
 
         if (!room) {
-          // Create new room with welcome message
+          // Create new room
           const welcomeMsg: ChatMessage = {
             id: "welcome-msg",
             role: MessageRole.MODEL,
@@ -155,29 +149,21 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
 
         setData(room);
         saveRoomLocal(room);
-        syncChannel.setInitialState(room.content, room.messages);
         setIsSaved(true);
 
       } else {
-        // Fallback: Local storage only (no real-time sync)
+        // Local-only mode
         const room = getRoomLocal(roomId);
         setData(room);
         setIsSaved(true);
-        console.info("[PadAI] Running in local-only mode (no Supabase)");
+        console.info("[PadAI] Running in local-only mode");
       }
     };
 
     init();
 
-    // Cleanup on unmount
     return () => {
-      if (syncChannelRef.current) {
-        // Save any pending changes before disconnect
-        if (dataRef.current) {
-          syncChannelRef.current.forceSave(dataRef.current);
-        }
-        syncChannelRef.current.disconnect();
-      }
+      syncChannelRef.current?.disconnect();
       if (typingTimeoutRef.current) {
         clearTimeout(typingTimeoutRef.current);
       }
@@ -242,44 +228,37 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
     });
   };
 
-  // ==================== CONTENT CHANGE (DONTPAD-STYLE) ====================
+  // ==================== CONTENT CHANGE ====================
   const handleContentChange = useCallback((newContent: string) => {
-    // 1. Mark as typing - blocks remote updates temporarily
+    // Mark as typing
     isTypingRef.current = true;
-    
-    // Update presence to show we're typing
     syncChannelRef.current?.updatePresence(true);
 
     // Clear previous typing timeout
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     
-    // Set typing to false after 1.5s of no typing
+    // Reset typing after 2s
     typingTimeoutRef.current = setTimeout(() => {
       isTypingRef.current = false;
       syncChannelRef.current?.updatePresence(false);
-    }, 1500);
+    }, 2000);
 
-    // 2. Update local state IMMEDIATELY
+    // Update local state
     setIsSaved(false);
     setData(prev => {
       if (!prev) return null;
-      return { ...prev, content: newContent };
+      const updated = { ...prev, content: newContent };
+      
+      // Save to local storage immediately
+      saveRoomLocal(updated);
+      
+      // Schedule database save (debounced)
+      syncChannelRef.current?.scheduleSave(updated);
+      
+      return updated;
     });
 
-    // 3. BROADCAST to other users IMMEDIATELY (no DB roundtrip!)
-    syncChannelRef.current?.broadcastContent(newContent);
-
-    // 4. Schedule debounced save to database (for persistence)
-    setData(current => {
-      if (current) {
-        const updatedRoom = { ...current, content: newContent };
-        syncChannelRef.current?.scheduleSave(updatedRoom);
-        saveRoomLocal(updatedRoom); // Also save locally
-      }
-      return current;
-    });
-
-    setIsSaved(true); // Mark as "saved" since we've broadcast it
+    setIsSaved(true);
   }, []);
 
   // ==================== CHAT MESSAGE HANDLING ====================
@@ -302,9 +281,9 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
     };
     setData(withUserMsg);
 
-    // BROADCAST messages to other users
-    syncChannelRef.current?.broadcastMessages(withUserMsg.messages);
-    syncChannelRef.current?.scheduleSave(withUserMsg);
+    // SAVE IMMEDIATELY so other devices see the message
+    console.info("[PadAI] 📤 Saving message to sync...");
+    await syncChannelRef.current?.immediateSave(withUserMsg);
     
     setIsAILoading(true);
 
@@ -342,7 +321,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
 
     setIsAILoading(false);
 
-    // Finalize AI message and broadcast
+    // Finalize AI message and save
     setData(prev => {
       if (!prev) return null;
       const finalMessages = prev.messages.map(m =>
@@ -350,10 +329,9 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
       );
       const finalData = { ...prev, messages: finalMessages };
       
-      // Broadcast final messages
-      syncChannelRef.current?.broadcastMessages(finalMessages);
-      syncChannelRef.current?.scheduleSave(finalData);
+      // Save final state
       saveRoomLocal(finalData);
+      syncChannelRef.current?.immediateSave(finalData);
       
       return finalData;
     });

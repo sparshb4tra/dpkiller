@@ -1,13 +1,8 @@
 /**
- * DONTPAD-STYLE SYNC SERVICE
+ * REAL-TIME SYNC SERVICE
  * 
- * How it works (like dontpad.com):
- * 1. BROADCAST for instant sync - messages go directly to other clients, no DB roundtrip
- * 2. DEBOUNCED DATABASE SAVE - persist to Supabase every 500ms of inactivity
- * 3. TYPING DETECTION - when you're typing, ignore remote content updates (prevents cursor jump)
- * 4. MERGE on reconnect - fetch latest from DB when reconnecting
- * 
- * This is MUCH faster than postgres_changes which waits for DB write.
+ * Uses Supabase Realtime postgres_changes for reliable cross-device sync.
+ * This is more reliable than broadcast-only approach for remote devices.
  */
 
 import { createClient, SupabaseClient, RealtimeChannel } from "@supabase/supabase-js";
@@ -26,7 +21,7 @@ const getClient = (): SupabaseClient | null => {
     client = createClient(supabaseUrl!, supabaseKey!, {
       realtime: {
         params: {
-          eventsPerSecond: 20, // Higher rate for responsive sync
+          eventsPerSecond: 20,
         },
       },
     });
@@ -58,7 +53,6 @@ export const upsertRoom = async (room: RoomData): Promise<boolean> => {
   const supabase = getClient();
   if (!supabase) return false;
 
-  // Try with full room data first, fallback to minimal columns
   const { error } = await supabase
     .from("rooms")
     .upsert({
@@ -71,28 +65,15 @@ export const upsertRoom = async (room: RoomData): Promise<boolean> => {
     console.error("[Sync] upsertRoom error:", error.message);
     return false;
   }
+  
+  console.info("[Sync] ✅ Saved to database");
   return true;
 };
 
 // ==================== SYNC CHANNEL CLASS ====================
 
-type SyncEventType = 'content' | 'messages' | 'presence';
-
-interface SyncEvent {
-  type: SyncEventType;
-  senderId: string;
-  senderLabel: string;
-  timestamp: number;
-  payload: {
-    content?: string;
-    messages?: ChatMessage[];
-    cursorPosition?: number;
-  };
-}
-
 interface SyncCallbacks {
-  onContentUpdate: (content: string, senderId: string, senderLabel: string) => void;
-  onMessagesUpdate: (messages: ChatMessage[], senderId: string) => void;
+  onRoomUpdate: (room: RoomData, isRemote: boolean) => void;
   onPresenceUpdate: (users: { id: string; label: string; isTyping: boolean }[]) => void;
   onConnectionChange: (status: 'connected' | 'disconnected' | 'connecting') => void;
 }
@@ -104,9 +85,8 @@ export class RoomSyncChannel {
   private clientLabel: string;
   private callbacks: SyncCallbacks;
   private saveTimeout: NodeJS.Timeout | null = null;
-  private pendingRoom: RoomData | null = null;
-  private lastSavedContent: string = '';
-  private lastSavedMessages: string = '';
+  private lastSavedHash: string = '';
+  private isSaving: boolean = false;
 
   constructor(
     roomId: string,
@@ -120,6 +100,10 @@ export class RoomSyncChannel {
     this.callbacks = callbacks;
   }
 
+  private hashRoom(room: RoomData): string {
+    return `${room.content}|${room.messages.length}|${room.messages[room.messages.length - 1]?.id || ''}`;
+  }
+
   async connect(): Promise<RoomData | null> {
     const supabase = getClient();
     if (!supabase) {
@@ -129,46 +113,19 @@ export class RoomSyncChannel {
 
     // Fetch initial room data
     let room = await fetchRoom(this.roomId);
+    console.info("[Sync] Initial fetch:", room ? "found" : "not found");
 
-    // Subscribe to broadcast channel (this is the fast path!)
-    // Using a simple channel name that works across all devices
+    // Create channel for this room
     const channelName = `room:${this.roomId}`;
-    console.info("[Sync] Connecting to channel:", channelName);
+    console.info("[Sync] Subscribing to channel:", channelName);
     
     this.channel = supabase.channel(channelName, {
       config: {
-        broadcast: { 
-          self: false,  // Don't receive your own broadcasts
-          ack: true,    // Get acknowledgment of broadcasts
-        },
         presence: { key: this.clientId },
       },
     });
 
-    // Listen for broadcast events (instant, no DB roundtrip)
-    this.channel.on('broadcast', { event: 'sync' }, ({ payload }) => {
-      const event = payload as SyncEvent;
-      
-      // Ignore our own events (shouldn't happen with self: false, but safety)
-      if (event.senderId === this.clientId) return;
-
-      console.info("[Sync] ✅ Received broadcast:", event.type, "from:", event.senderLabel);
-
-      if (event.type === 'content' && event.payload.content !== undefined) {
-        this.callbacks.onContentUpdate(
-          event.payload.content,
-          event.senderId,
-          event.senderLabel
-        );
-      }
-
-      if (event.type === 'messages' && event.payload.messages) {
-        this.callbacks.onMessagesUpdate(event.payload.messages, event.senderId);
-      }
-    });
-
-    // ALSO listen for postgres_changes as a fallback for cross-device sync
-    // This ensures sync works even if broadcast has issues
+    // Listen for database changes - THIS IS THE RELIABLE SYNC
     this.channel.on(
       'postgres_changes',
       { 
@@ -178,17 +135,22 @@ export class RoomSyncChannel {
         filter: `id=eq.${this.roomId}`
       },
       (payload) => {
-        console.info("[Sync] 📦 DB change detected:", payload.eventType);
-        if (payload.new && typeof payload.new === 'object') {
+        console.info("[Sync] 📦 Database change:", payload.eventType);
+        
+        if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
           const newData = payload.new as RoomData;
-          // Only apply if it's from someone else (check content differs)
-          this.callbacks.onContentUpdate(
-            newData.content || '',
-            'db-sync',
-            'Remote'
-          );
-          if (newData.messages) {
-            this.callbacks.onMessagesUpdate(newData.messages, 'db-sync');
+          
+          if (newData) {
+            const newHash = this.hashRoom(newData);
+            
+            // Skip if this is our own save (hash matches what we just saved)
+            if (newHash === this.lastSavedHash && this.isSaving) {
+              console.info("[Sync] Skipping own update");
+              return;
+            }
+            
+            console.info("[Sync] ✅ Applying remote update");
+            this.callbacks.onRoomUpdate(newData, true);
           }
         }
       }
@@ -205,13 +167,14 @@ export class RoomSyncChannel {
       this.callbacks.onPresenceUpdate(users);
     });
 
-    // Track connection status
+    // Subscribe and track status
     this.channel.subscribe((status, err) => {
       console.info("[Sync] Channel status:", status, err ? `Error: ${err}` : "");
       
       if (status === 'SUBSCRIBED') {
-        console.info("[Sync] ✅ Connected to room:", this.roomId);
+        console.info("[Sync] ✅ Connected and listening for changes");
         this.callbacks.onConnectionChange('connected');
+        
         // Track our presence
         this.channel?.track({
           clientId: this.clientId,
@@ -220,7 +183,7 @@ export class RoomSyncChannel {
           joinedAt: Date.now(),
         });
       } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-        console.warn("[Sync] ❌ Disconnected from room:", this.roomId);
+        console.warn("[Sync] ❌ Disconnected");
         this.callbacks.onConnectionChange('disconnected');
       } else {
         this.callbacks.onConnectionChange('connecting');
@@ -228,62 +191,6 @@ export class RoomSyncChannel {
     });
 
     return room;
-  }
-
-  // Broadcast content change to other clients (INSTANT)
-  broadcastContent(content: string) {
-    if (!this.channel) {
-      console.warn("[Sync] Cannot broadcast - no channel");
-      return;
-    }
-
-    const event: SyncEvent = {
-      type: 'content',
-      senderId: this.clientId,
-      senderLabel: this.clientLabel,
-      timestamp: Date.now(),
-      payload: { content },
-    };
-
-    this.channel.send({
-      type: 'broadcast',
-      event: 'sync',
-      payload: event,
-    }).then((result) => {
-      if (result === 'ok') {
-        console.info("[Sync] 📤 Content broadcast sent");
-      } else {
-        console.warn("[Sync] ⚠️ Content broadcast failed:", result);
-      }
-    });
-  }
-
-  // Broadcast messages change to other clients (INSTANT)
-  broadcastMessages(messages: ChatMessage[]) {
-    if (!this.channel) {
-      console.warn("[Sync] Cannot broadcast - no channel");
-      return;
-    }
-
-    const event: SyncEvent = {
-      type: 'messages',
-      senderId: this.clientId,
-      senderLabel: this.clientLabel,
-      timestamp: Date.now(),
-      payload: { messages },
-    };
-
-    this.channel.send({
-      type: 'broadcast',
-      event: 'sync',
-      payload: event,
-    }).then((result) => {
-      if (result === 'ok') {
-        console.info("[Sync] 📤 Messages broadcast sent, count:", messages.length);
-      } else {
-        console.warn("[Sync] ⚠️ Messages broadcast failed:", result);
-      }
-    });
   }
 
   // Update presence (typing indicator)
@@ -296,60 +203,39 @@ export class RoomSyncChannel {
     });
   }
 
-  // Debounced save to database (for persistence, not for sync)
-  scheduleSave(room: RoomData) {
-    this.pendingRoom = {
-      ...room,
-      updatedAt: Date.now(),
-      lastEditor: { id: this.clientId, label: this.clientLabel },
-    };
+  // Save to database - this triggers postgres_changes for other clients
+  async saveRoom(room: RoomData): Promise<boolean> {
+    this.isSaving = true;
+    this.lastSavedHash = this.hashRoom(room);
+    
+    const success = await upsertRoom(room);
+    
+    // Reset saving flag after a short delay
+    setTimeout(() => {
+      this.isSaving = false;
+    }, 500);
+    
+    return success;
+  }
 
-    // Clear existing timeout
+  // Debounced save (for typing - saves after 300ms of inactivity)
+  scheduleSave(room: RoomData) {
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
     }
 
-    // Schedule save after 500ms of inactivity
-    this.saveTimeout = setTimeout(async () => {
-      if (!this.pendingRoom) return;
-
-      const contentChanged = this.pendingRoom.content !== this.lastSavedContent;
-      const messagesChanged = JSON.stringify(this.pendingRoom.messages) !== this.lastSavedMessages;
-
-      if (!contentChanged && !messagesChanged) {
-        console.info("[Sync] No changes to persist");
-        return;
-      }
-
-      console.info("[Sync] Persisting to database...");
-      const success = await upsertRoom(this.pendingRoom);
-
-      if (success) {
-        this.lastSavedContent = this.pendingRoom.content;
-        this.lastSavedMessages = JSON.stringify(this.pendingRoom.messages);
-        console.info("[Sync] Persisted successfully");
-      }
-    }, 500);
+    this.saveTimeout = setTimeout(() => {
+      this.saveRoom(room);
+    }, 300);
   }
 
-  // Force immediate save (useful before disconnect)
-  async forceSave(room: RoomData): Promise<boolean> {
+  // Immediate save (for messages)
+  async immediateSave(room: RoomData): Promise<boolean> {
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
       this.saveTimeout = null;
     }
-
-    return await upsertRoom({
-      ...room,
-      updatedAt: Date.now(),
-      lastEditor: { id: this.clientId, label: this.clientLabel },
-    });
-  }
-
-  // Set initial saved state (to track changes)
-  setInitialState(content: string, messages: ChatMessage[]) {
-    this.lastSavedContent = content;
-    this.lastSavedMessages = JSON.stringify(messages);
+    return await this.saveRoom(room);
   }
 
   disconnect() {
@@ -374,4 +260,3 @@ export const createDefaultRoom = (roomId: string, welcomeMessage: ChatMessage): 
   messages: [welcomeMessage],
   updatedAt: Date.now(),
 });
-
