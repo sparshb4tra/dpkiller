@@ -39,20 +39,16 @@ const Editor: React.FC<EditorProps> = ({
       );
     }
     
-    if (lastEditor && lastEditor.id !== clientId) {
+    if (lastEditor) {
+      const isMe = lastEditor.id === clientId;
       return (
-        <span className="text-slate-400 dark:text-slate-500 text-xs">
-          Last edit by <span className="font-medium text-slate-600 dark:text-slate-300">{lastEditor.label}</span>
+        <span className="text-slate-400 dark:text-slate-500 text-xs transition-opacity duration-300">
+          Last edit by <span className="font-medium text-slate-600 dark:text-slate-300">{isMe ? 'you' : lastEditor.label}</span>
         </span>
       );
     }
     
-    // Default state: show online count or nothing (cleaner)
-    if (onlineUsers.length > 0) {
-      return null; // Let the online count be the only thing shown
-    }
-    
-    return null;
+    return <span className="text-slate-300 dark:text-slate-600 text-xs">Ready to write</span>;
   };
 
   return (
