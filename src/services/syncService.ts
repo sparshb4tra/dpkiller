@@ -74,7 +74,7 @@ export const upsertRoom = async (room: RoomData): Promise<boolean> => {
 
 interface SyncCallbacks {
   onRoomUpdate: (room: RoomData, isRemote: boolean) => void;
-  onPresenceUpdate: (users: { id: string; label: string; isTyping: boolean }[]) => void;
+  onPresenceUpdate: (users: { id: string; label: string; isTyping: boolean; cursor?: { x: number; y: number } }[]) => void;
   onConnectionChange: (status: 'connected' | 'disconnected' | 'connecting') => void;
 }
 
@@ -163,6 +163,7 @@ export class RoomSyncChannel {
         id: p.clientId,
         label: p.clientLabel,
         isTyping: p.isTyping || false,
+        cursor: p.cursor,
       }));
       this.callbacks.onPresenceUpdate(users);
     });
@@ -194,11 +195,12 @@ export class RoomSyncChannel {
   }
 
   // Update presence (typing indicator)
-  updatePresence(isTyping: boolean) {
+  updatePresence(isTyping: boolean, cursor?: { x: number; y: number }) {
     this.channel?.track({
       clientId: this.clientId,
       clientLabel: this.clientLabel,
       isTyping,
+      cursor,
       joinedAt: Date.now(),
     });
   }

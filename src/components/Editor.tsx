@@ -12,6 +12,7 @@ interface EditorProps {
   lastEditor?: { id: string; label: string } | null;
   onlineUsers?: OnlineUser[];
   clientId?: string;
+  onCursorMove?: (x: number, y: number) => void;
 }
 
 const Editor: React.FC<EditorProps> = ({ 
@@ -19,8 +20,19 @@ const Editor: React.FC<EditorProps> = ({
   onChange, 
   lastEditor, 
   onlineUsers = [],
-  clientId 
+  clientId,
+  onCursorMove
 }) => {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!onCursorMove || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    onCursorMove(x, y);
+  };
+
   // Find users who are typing (excluding self)
   const typingUsers = onlineUsers.filter(u => u.isTyping && u.id !== clientId);
   
@@ -52,7 +64,11 @@ const Editor: React.FC<EditorProps> = ({
   };
 
   return (
-    <div className="h-full w-full flex flex-col editor-surface relative">
+    <div 
+      ref={containerRef}
+      className="h-full w-full flex flex-col editor-surface relative"
+      onMouseMove={handleMouseMove}
+    >
       <textarea
         className="editor-textarea flex-1 w-full h-full p-5 sm:p-8 resize-none outline-none text-lg leading-relaxed font-sans"
         style={{ fontFamily: 'Helvetica Neue, Helvetica, Arial, sans-serif' }}

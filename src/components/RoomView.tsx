@@ -7,6 +7,8 @@ import { getRoom as getRoomLocal, saveRoom as saveRoomLocal, getClientIdentity }
 import { streamAIResponse } from '../services/groqService';
 import { RoomSyncChannel, hasSupabase, upsertRoom, createDefaultRoom, fetchRoom } from '../services/syncService';
 
+import CursorsOverlay from './CursorsOverlay';
+
 interface RoomViewProps {
   roomId: string;
   navigateHome: () => void;
@@ -37,6 +39,16 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [lastEditor, setLastEditor] = useState<{ id: string; label: string } | null>(null);
+
+  // Extract cursors for overlay
+  const cursors = onlineUsers
+    .filter(u => u.cursor) // Only users with cursor position
+    .map(u => ({
+      id: u.id,
+      label: u.label,
+      x: u.cursor!.x,
+      y: u.cursor!.y
+    }));
 
   // UI state
   const [isNotesOpen, setIsNotesOpen] = useState(false);
@@ -378,6 +390,9 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
       />
 
       <div ref={containerRef} className="flex-1 flex overflow-hidden relative p-0 sm:p-4 lg:p-6 sm:gap-4 mt-14">
+        {/* Render cursors only if on desktop/tablet where notes are visible side-by-side or focused */}
+        {!isMobile && <CursorsOverlay cursors={cursors} selfId={clientIdRef.current} />}
+
         <div
           className={`${isMobile ? 'w-full' : 'bg-white dark:bg-[var(--bg-surface)] border border-[var(--border-muted)] rounded-2xl shadow-lg'} h-full overflow-hidden transition-all duration-200`}
           style={{
@@ -414,6 +429,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
               lastEditor={lastEditor}
               onlineUsers={onlineUsers}
               clientId={clientIdRef.current}
+              onCursorMove={(x, y) => syncChannelRef.current?.updatePresence(isTypingRef.current, { x, y })}
             />
           </div>
         )}
