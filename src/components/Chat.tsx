@@ -105,8 +105,19 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
     inputRef.current?.focus();
   };
 
+  // Click-to-focus handler for the main container
+  const handleContainerClick = (e: React.MouseEvent) => {
+    // If clicking on the container itself (not a bubble or form), focus input
+    if (e.target === e.currentTarget || e.target === messagesContainerRef.current) {
+      inputRef.current?.focus();
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full bg-[#f8fafc] sm:bg-white dark:bg-[var(--bg-surface)] text-[var(--text-primary)] relative">
+    <div 
+      className="flex flex-col h-full bg-[#f8fafc] sm:bg-white dark:bg-[var(--bg-surface)] text-[var(--text-primary)] relative"
+      onClick={handleContainerClick}
+    >
       
       {/* Messages Scroll Area */}
       <div 
