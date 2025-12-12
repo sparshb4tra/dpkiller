@@ -3,46 +3,72 @@ import Header from './Header';
 import Editor from './Editor';
 import Chat from './Chat';
 import { RoomData, ChatMessage, MessageRole } from '../types';
-import { getRoom as getRoomLocal, saveRoom as saveRoomLocal, subscribeToRoom as subscribeToRoomLocal, getClientIdentity } from '../services/storageService';
+import { getRoom as getRoomLocal, saveRoom as saveRoomLocal, getClientIdentity } from '../services/storageService';
 import { streamAIResponse } from '../services/geminiService';
-import { hasSupabase, fetchRoom, upsertRoom, subscribeToRoom as subscribeSupabase, logSupabaseHealth } from '../services/supabaseService';
+import { RoomSyncChannel, hasSupabase, upsertRoom, createDefaultRoom } from '../services/syncService';
 
 interface RoomViewProps {
   roomId: string;
   navigateHome: () => void;
 }
 
+interface OnlineUser {
+  id: string;
+  label: string;
+  isTyping: boolean;
+}
+
+const WELCOME_MESSAGES = [
+  "Hello. I'm here to help you with your notes.",
+  "Hey there! Ready to brainstorm?",
+  "Hi! What can I help you write today?",
+  "Welcome back. What are we working on?",
+  "Hi! Share the room link so others can collaborate."
+];
+
+const getRandomWelcome = () => WELCOME_MESSAGES[Math.floor(Math.random() * WELCOME_MESSAGES.length)];
+
 const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
+  // Core state
   const [data, setData] = useState<RoomData | null>(null);
   const [isCopied, setIsCopied] = useState(false);
   const [isAILoading, setIsAILoading] = useState(false);
   const [isSaved, setIsSaved] = useState(true);
+  const [isConnected, setIsConnected] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+  const [lastEditor, setLastEditor] = useState<{ id: string; label: string } | null>(null);
+
+  // UI state
   const [isNotesOpen, setIsNotesOpen] = useState(false);
   const [noteWidth, setNoteWidth] = useState<number>(0.35);
   const [isDark, setIsDark] = useState<boolean>(() => localStorage.getItem('padai_theme') === 'dark');
   const [accent, setAccent] = useState<string>('');
   const [isMobile, setIsMobile] = useState<boolean>(() => window.innerWidth < 640);
 
+  // Refs
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isResizingRef = useRef<boolean>(false);
   const clientIdRef = useRef<string>('');
   const clientLabelRef = useRef<string>('');
   
-  // DONTPAD-STYLE SYNC: Simple refs for tracking
+  // Sync refs - DONTPAD STYLE
+  const syncChannelRef = useRef<RoomSyncChannel | null>(null);
   const isTypingRef = useRef<boolean>(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastSavedContentRef = useRef<string>('');
-  const lastSavedMessagesRef = useRef<string>('');
+  const dataRef = useRef<RoomData | null>(null); // For accessing latest data in callbacks
 
-  // Initialize
+  // Keep dataRef in sync
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+
+  // ==================== INITIALIZATION ====================
   useEffect(() => {
     const { id, label } = getClientIdentity();
     clientIdRef.current = id;
     clientLabelRef.current = label;
 
     console.info("[PadAI] Init", { roomId, clientId: id, hasSupabase });
-    logSupabaseHealth();
 
     // Accent color
     const existingAccent = localStorage.getItem('padai_accent');
@@ -57,78 +83,108 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
       document.documentElement.style.setProperty('--accent', pick);
     }
 
-    let unsubscribe: (() => void) | null = null;
-
     const init = async () => {
       if (hasSupabase) {
-        // 1. Fetch initial data
-        let room = await fetchRoom(roomId);
-        
+        // Create sync channel with callbacks
+        const syncChannel = new RoomSyncChannel(
+          roomId,
+          id,
+          label,
+          {
+            // INSTANT content updates from other users
+            onContentUpdate: (content, senderId, senderLabel) => {
+              console.info("[PadAI] Content update from:", senderLabel);
+              
+              // DONTPAD LOGIC: Only apply if we're not typing
+              if (!isTypingRef.current) {
+                setData(prev => prev ? { ...prev, content } : null);
+                setLastEditor({ id: senderId, label: senderLabel });
+              } else {
+                console.info("[PadAI] Skipping content update - user is typing");
+              }
+            },
+
+            // INSTANT message updates from other users
+            onMessagesUpdate: (messages, senderId) => {
+              console.info("[PadAI] Messages update, count:", messages.length);
+              setData(prev => {
+                if (!prev) return null;
+                // Merge messages intelligently - keep our streaming message if any
+                const ourStreamingMsg = prev.messages.find(m => m.isStreaming && m.senderId === 'ai');
+                if (ourStreamingMsg) {
+                  // Keep our streaming message, but update non-streaming ones
+                  const otherMsgs = messages.filter(m => !m.isStreaming);
+                  return { ...prev, messages: [...otherMsgs, ourStreamingMsg] };
+                }
+                return { ...prev, messages };
+              });
+            },
+
+            // Presence updates
+            onPresenceUpdate: (users) => {
+              setOnlineUsers(users.filter(u => u.id !== id)); // Exclude self
+            },
+
+            // Connection status
+            onConnectionChange: (status) => {
+              setIsConnected(status === 'connected');
+              console.info("[PadAI] Connection:", status);
+            },
+          }
+        );
+
+        syncChannelRef.current = syncChannel;
+
+        // Connect and fetch initial data
+        let room = await syncChannel.connect();
+
         if (!room) {
-          // Create new room
-          room = getRoomLocal(roomId);
-          room.updatedAt = Date.now();
+          // Create new room with welcome message
+          const welcomeMsg: ChatMessage = {
+            id: "welcome-msg",
+            role: MessageRole.MODEL,
+            text: getRandomWelcome(),
+            senderId: "ai",
+            senderLabel: "AI",
+            timestamp: Date.now()
+          };
+          room = createDefaultRoom(roomId, welcomeMsg);
           await upsertRoom(room);
           console.info("[PadAI] Created new room");
         }
 
         setData(room);
         saveRoomLocal(room);
-        lastSavedContentRef.current = room.content;
-        lastSavedMessagesRef.current = JSON.stringify(room.messages);
+        syncChannel.setInitialState(room.content, room.messages);
         setIsSaved(true);
 
-        // 2. Subscribe to realtime updates - DONTPAD STYLE: just apply if not typing
-        unsubscribe = subscribeSupabase(
-          roomId,
-          (incoming) => {
-            console.info("[PadAI] Received update", { 
-              isTyping: isTypingRef.current,
-              incomingUpdatedAt: incoming.updatedAt 
-            });
-
-            // DONTPAD LOGIC: Only apply remote updates when NOT actively typing
-            // This prevents cursor jumping while you type
-            if (!isTypingRef.current) {
-              console.info("[PadAI] Applying remote update");
-              setData(incoming);
-              saveRoomLocal(incoming);
-              lastSavedContentRef.current = incoming.content;
-              lastSavedMessagesRef.current = JSON.stringify(incoming.messages);
-              setIsSaved(true);
-            } else {
-              console.info("[PadAI] Skipping remote update - user is typing");
-            }
-          },
-          (status) => {
-            console.info("[PadAI] Realtime status:", status);
-          }
-        );
       } else {
-        // Local only mode
+        // Fallback: Local storage only (no real-time sync)
         const room = getRoomLocal(roomId);
         setData(room);
         setIsSaved(true);
-        
-        unsubscribe = subscribeToRoomLocal(roomId, (incoming) => {
-          if (!isTypingRef.current) {
-            setData(incoming);
-            setIsSaved(true);
-          }
-        });
+        console.info("[PadAI] Running in local-only mode (no Supabase)");
       }
     };
 
     init();
 
+    // Cleanup on unmount
     return () => {
-      if (unsubscribe) unsubscribe();
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (syncChannelRef.current) {
+        // Save any pending changes before disconnect
+        if (dataRef.current) {
+          syncChannelRef.current.forceSave(dataRef.current);
+        }
+        syncChannelRef.current.disconnect();
+      }
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
     };
   }, [roomId]);
 
-  // Theme handling
+  // ==================== THEME ====================
   useEffect(() => {
     if (isDark) {
       document.body.classList.add('dark');
@@ -139,14 +195,14 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
     }
   }, [isDark]);
 
-  // Mobile detection
+  // ==================== MOBILE DETECTION ====================
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 640);
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, []);
 
-  // Resize handlers
+  // ==================== RESIZE HANDLERS ====================
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizingRef.current || !containerRef.current) return;
@@ -177,6 +233,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
     e.preventDefault();
   };
 
+  // ==================== COPY LINK ====================
   const handleCopyLink = () => {
     const url = `${window.location.origin}/#/${roomId}`;
     navigator.clipboard.writeText(url).then(() => {
@@ -185,75 +242,47 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
     });
   };
 
-  // DONTPAD-STYLE: Save to server with debounce
-  const saveToServer = useCallback(async (roomData: RoomData) => {
-    const contentChanged = roomData.content !== lastSavedContentRef.current;
-    const messagesChanged = JSON.stringify(roomData.messages) !== lastSavedMessagesRef.current;
-
-    if (!contentChanged && !messagesChanged) {
-      console.info("[PadAI] No changes to save");
-      setIsSaved(true);
-      return;
-    }
-
-    const payload: RoomData = {
-      ...roomData,
-      updatedAt: Date.now(),
-      lastEditor: { id: clientIdRef.current, label: clientLabelRef.current }
-    };
-
-    console.info("[PadAI] Saving to server...");
-    
-    if (hasSupabase) {
-      const success = await upsertRoom(payload);
-      if (success) {
-        lastSavedContentRef.current = payload.content;
-        lastSavedMessagesRef.current = JSON.stringify(payload.messages);
-        setIsSaved(true);
-        console.info("[PadAI] Saved successfully");
-      } else {
-        console.error("[PadAI] Save failed");
-      }
-    } else {
-      saveRoomLocal(payload);
-      lastSavedContentRef.current = payload.content;
-      lastSavedMessagesRef.current = JSON.stringify(payload.messages);
-      setIsSaved(true);
-    }
-  }, []);
-
-  // DONTPAD-STYLE: Handle content changes with typing detection
+  // ==================== CONTENT CHANGE (DONTPAD-STYLE) ====================
   const handleContentChange = useCallback((newContent: string) => {
-    // Mark as typing - this blocks remote updates temporarily
+    // 1. Mark as typing - blocks remote updates temporarily
     isTypingRef.current = true;
     
+    // Update presence to show we're typing
+    syncChannelRef.current?.updatePresence(true);
+
     // Clear previous typing timeout
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     
     // Set typing to false after 1.5s of no typing
     typingTimeoutRef.current = setTimeout(() => {
       isTypingRef.current = false;
-      console.info("[PadAI] Typing stopped");
+      syncChannelRef.current?.updatePresence(false);
     }, 1500);
 
-    // Update local state immediately
+    // 2. Update local state IMMEDIATELY
     setIsSaved(false);
     setData(prev => {
       if (!prev) return null;
       return { ...prev, content: newContent };
     });
 
-    // Debounce save (300ms like Dontpad)
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-      setData(current => {
-        if (current) saveToServer(current);
-        return current;
-      });
-    }, 300);
-  }, [saveToServer]);
+    // 3. BROADCAST to other users IMMEDIATELY (no DB roundtrip!)
+    syncChannelRef.current?.broadcastContent(newContent);
 
-  // Handle chat messages
+    // 4. Schedule debounced save to database (for persistence)
+    setData(current => {
+      if (current) {
+        const updatedRoom = { ...current, content: newContent };
+        syncChannelRef.current?.scheduleSave(updatedRoom);
+        saveRoomLocal(updatedRoom); // Also save locally
+      }
+      return current;
+    });
+
+    setIsSaved(true); // Mark as "saved" since we've broadcast it
+  }, []);
+
+  // ==================== CHAT MESSAGE HANDLING ====================
   const handleSendMessage = async (text: string) => {
     if (!data) return;
 
@@ -266,10 +295,16 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
       senderLabel: clientLabelRef.current || 'Guest'
     };
 
-    // Add user message and save
-    const withUserMsg = { ...data, messages: [...data.messages, userMsg] };
+    // Add user message
+    const withUserMsg: RoomData = { 
+      ...data, 
+      messages: [...data.messages, userMsg] 
+    };
     setData(withUserMsg);
-    await saveToServer(withUserMsg);
+
+    // BROADCAST messages to other users
+    syncChannelRef.current?.broadcastMessages(withUserMsg.messages);
+    syncChannelRef.current?.scheduleSave(withUserMsg);
     
     setIsAILoading(true);
 
@@ -297,7 +332,9 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
           if (!prev) return null;
           return {
             ...prev,
-            messages: prev.messages.map(m => m.id === aiMsgId ? { ...m, text: chunkText } : m)
+            messages: prev.messages.map(m => 
+              m.id === aiMsgId ? { ...m, text: chunkText } : m
+            )
           };
         });
       }
@@ -305,20 +342,33 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
 
     setIsAILoading(false);
 
-    // Finalize AI message and save
+    // Finalize AI message and broadcast
     setData(prev => {
       if (!prev) return null;
       const finalMessages = prev.messages.map(m =>
         m.id === aiMsgId ? { ...m, isStreaming: false } : m
       );
       const finalData = { ...prev, messages: finalMessages };
-      saveToServer(finalData);
+      
+      // Broadcast final messages
+      syncChannelRef.current?.broadcastMessages(finalMessages);
+      syncChannelRef.current?.scheduleSave(finalData);
+      saveRoomLocal(finalData);
+      
       return finalData;
     });
   };
 
+  // ==================== RENDER ====================
   if (!data) {
-    return <div className="h-screen flex items-center justify-center font-sans">Loading...</div>;
+    return (
+      <div className="h-screen flex items-center justify-center font-sans">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-sm text-[var(--text-secondary)]">Connecting to room...</span>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -333,6 +383,8 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
         isDark={isDark}
         onToggleNotes={() => setIsNotesOpen(prev => !prev)}
         isNotesOpen={isNotesOpen}
+        isConnected={isConnected}
+        onlineCount={onlineUsers.length}
       />
 
       <div ref={containerRef} className="flex-1 flex overflow-hidden relative p-0 sm:p-4 lg:p-6 sm:gap-4">
@@ -366,7 +418,13 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
               minWidth: isNotesOpen ? '25%' : '0',
             }}
           >
-            <Editor content={data.content} onChange={handleContentChange} />
+            <Editor 
+              content={data.content} 
+              onChange={handleContentChange}
+              lastEditor={lastEditor}
+              onlineUsers={onlineUsers}
+              clientId={clientIdRef.current}
+            />
           </div>
         )}
 
@@ -384,7 +442,13 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
                 <button className="text-sm text-[var(--accent)] font-bold" onClick={() => setIsNotesOpen(false)}>Close</button>
               </div>
               <div className="h-[calc(100%-52px)]">
-                <Editor content={data.content} onChange={handleContentChange} />
+                <Editor 
+                  content={data.content} 
+                  onChange={handleContentChange}
+                  lastEditor={lastEditor}
+                  onlineUsers={onlineUsers}
+                  clientId={clientIdRef.current}
+                />
               </div>
             </div>
           </div>

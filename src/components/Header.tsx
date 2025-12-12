@@ -10,6 +10,8 @@ interface HeaderProps {
   isDark: boolean;
   onToggleNotes: () => void;
   isNotesOpen: boolean;
+  isConnected?: boolean;
+  onlineCount?: number;
 }
 
 const Header: React.FC<HeaderProps> = ({ 
@@ -22,6 +24,8 @@ const Header: React.FC<HeaderProps> = ({
   isDark,
   onToggleNotes,
   isNotesOpen,
+  isConnected = false,
+  onlineCount = 0,
 }) => {
   return (
     <header className="h-14 border-b border-gray-200 dark:border-[var(--border-muted)] flex items-center justify-between px-3 sm:px-4 bg-white dark:bg-[var(--bg-surface)] shrink-0 z-30 sticky top-0">
@@ -39,18 +43,35 @@ const Header: React.FC<HeaderProps> = ({
         <div className="hidden sm:flex items-center text-sm text-gray-400 gap-2">
           <span>/</span>
           <span className="font-mono text-gray-600 dark:text-gray-400 select-all">{roomId}</span>
+          
+          {/* Connection indicator */}
+          <span className={`ml-2 w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`} 
+                title={isConnected ? 'Connected' : 'Connecting...'} />
+          
+          {/* Online count */}
+          {onlineCount > 0 && (
+            <span className="text-xs text-gray-500" title={`${onlineCount} other user(s) online`}>
+              +{onlineCount}
+            </span>
+          )}
         </div>
 
-        {/* Mobile save indicator */}
-        <span className={`sm:hidden text-[10px] font-medium transition-colors duration-300 ${isSaved ? 'text-gray-300' : 'text-amber-500'}`}>
-          {isSaved ? '✓' : '...'}
-        </span>
+        {/* Mobile indicators */}
+        <div className="sm:hidden flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`} />
+          {onlineCount > 0 && (
+            <span className="text-[10px] text-gray-500">+{onlineCount}</span>
+          )}
+          <span className={`text-[10px] font-medium transition-colors duration-300 ${isSaved ? 'text-gray-300' : 'text-amber-500'}`}>
+            {isSaved ? '✓' : '...'}
+          </span>
+        </div>
       </div>
 
       <div className="flex items-center gap-1 sm:gap-3 shrink-0">
         {/* Desktop save indicator */}
         <span className={`hidden sm:inline text-xs font-medium transition-colors duration-300 ${isSaved ? 'text-gray-300' : 'text-amber-500'}`}>
-          {isSaved ? 'Saved' : 'Unsaved'}
+          {isSaved ? 'Saved' : 'Saving...'}
         </span>
 
         {/* Notes button - BEFORE share on mobile for easier access */}

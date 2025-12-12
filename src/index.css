@@ -42,19 +42,39 @@ body {
   -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
   min-height: 100dvh; /* Dynamic viewport height for mobile */
+  height: 100dvh;
   overflow-x: hidden;
+  overflow-y: hidden; /* Prevent body scroll on mobile */
   overscroll-behavior: none; /* Prevent pull-to-refresh interference */
+  position: fixed;
+  width: 100%;
 }
 
 #root {
   min-height: 100vh;
+  min-height: 100dvh;
+  height: 100dvh;
   background: var(--bg-page);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-.app-shell {
-  background: var(--bg-page);
-  color: var(--text-primary);
+/* Mobile viewport fix for keyboard */
+@supports (height: 100dvh) {
+  #root {
+    height: 100dvh;
+  }
 }
+
+/* Ensure app fills viewport properly */
+.app-shell {
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+/* app-shell is defined above with mobile viewport fixes */
 
 .bubble {
   padding: 10px 14px;
