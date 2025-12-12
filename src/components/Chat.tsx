@@ -169,7 +169,7 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
                     ? 'bg-[var(--accent)] text-white rounded-2xl rounded-tr-sm' 
                     : (isAI 
                         ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-100 dark:border-slate-700 rounded-2xl rounded-tl-sm'
-                        : 'bg-emerald-600 text-white rounded-2xl rounded-tr-sm') // Others: Green/Emerald on Right
+                        : 'bg-emerald-600 dark:bg-emerald-500 text-white rounded-2xl rounded-tr-sm') // Others: Green/Emerald on Right
                   }
                 `}
                 >
@@ -209,7 +209,7 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
         }}
       >
         <form onSubmit={handleSubmit} className="flex items-end gap-2 max-w-4xl mx-auto">
-          <div className="flex-1 bg-slate-100 dark:bg-slate-800/50 rounded-2xl border border-transparent focus-within:border-[var(--accent)] focus-within:bg-white dark:focus-within:bg-slate-800 transition-all duration-200">
+          <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-transparent focus-within:border-[var(--accent)] focus-within:bg-white dark:focus-within:bg-slate-800 transition-all duration-200">
             <input
               ref={inputRef}
               type="text"
