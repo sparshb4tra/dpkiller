@@ -25,8 +25,16 @@ const Editor: React.FC<EditorProps> = ({
 }) => {
   const containerRef = React.useRef<HTMLDivElement>(null);
 
+  const lastCursorUpdate = React.useRef<number>(0);
+
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!onCursorMove || !containerRef.current) return;
+    
+    // Throttle updates to ~20fps (50ms)
+    const now = Date.now();
+    if (now - lastCursorUpdate.current < 50) return;
+    lastCursorUpdate.current = now;
+
     const rect = containerRef.current.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;

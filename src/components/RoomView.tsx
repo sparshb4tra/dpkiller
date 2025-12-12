@@ -40,14 +40,19 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [lastEditor, setLastEditor] = useState<{ id: string; label: string } | null>(null);
 
-  // Extract cursors for overlay
+  // Live cursor positions (from Broadcast)
+  // Map<userId, {x, y, lastUpdate}>
+  const [cursorPositions, setCursorPositions] = useState<Record<string, { x: number; y: number }>>({});
+
+  // Combine online users with their cursor positions
   const cursors = onlineUsers
-    .filter(u => u.cursor) // Only users with cursor position
+    .filter(u => cursorPositions[u.id]) // Only users with known position
     .map(u => ({
       id: u.id,
       label: u.label,
-      x: u.cursor!.x,
-      y: u.cursor!.y
+      color: (u as any).color, // Type assertion since OnlineUser might need update
+      x: cursorPositions[u.id].x,
+      y: cursorPositions[u.id].y
     }));
 
   // UI state
@@ -55,6 +60,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
   const [noteWidth, setNoteWidth] = useState<number>(0.35);
   const [isDark, setIsDark] = useState<boolean>(() => localStorage.getItem('padai_theme') === 'dark');
   const [accent, setAccent] = useState<string>('');
+  const [clientColor, setClientColor] = useState<string>('#000000'); // Store our color
   const [isMobile, setIsMobile] = useState<boolean>(() => window.innerWidth < 640);
 
   // Refs
@@ -68,11 +74,27 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
   const isTypingRef = useRef<boolean>(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Helper to generate consistent color from ID
+  const getClientColor = (id: string) => {
+    const colors = [
+      '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#d946ef', '#ec4899'
+    ];
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) {
+      hash = id.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
+  };
+
   // ==================== INITIALIZATION ====================
   useEffect(() => {
     const { id, label } = getClientIdentity();
     clientIdRef.current = id;
     clientLabelRef.current = label;
+    
+    // Generate and set our color
+    const myColor = getClientColor(id);
+    setClientColor(myColor);
 
     console.info("[noteai] Init", { roomId, clientId: id, hasSupabase });
 
@@ -96,6 +118,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
           roomId,
           id,
           label,
+          myColor,
           {
             // Called when room data changes (from database)
             onRoomUpdate: (incomingRoom, isRemote) => {
@@ -134,6 +157,14 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
             // Presence updates
             onPresenceUpdate: (users) => {
               setOnlineUsers(users.filter(u => u.id !== id));
+            },
+            
+            // Live Cursor Broadcasts
+            onCursorMove: (userId, x, y) => {
+              setCursorPositions(prev => ({
+                ...prev,
+                [userId]: { x, y }
+              }));
             },
 
             // Connection status

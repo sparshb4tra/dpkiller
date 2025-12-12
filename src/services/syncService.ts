@@ -74,7 +74,8 @@ export const upsertRoom = async (room: RoomData): Promise<boolean> => {
 
 interface SyncCallbacks {
   onRoomUpdate: (room: RoomData, isRemote: boolean) => void;
-  onPresenceUpdate: (users: { id: string; label: string; isTyping: boolean; cursor?: { x: number; y: number } }[]) => void;
+  onPresenceUpdate: (users: { id: string; label: string; isTyping: boolean; color: string }[]) => void;
+  onCursorMove: (userId: string, x: number, y: number) => void;
   onConnectionChange: (status: 'connected' | 'disconnected' | 'connecting') => void;
 }
 
@@ -83,6 +84,7 @@ export class RoomSyncChannel {
   private roomId: string;
   private clientId: string;
   private clientLabel: string;
+  private clientColor: string;
   private callbacks: SyncCallbacks;
   private saveTimeout: NodeJS.Timeout | null = null;
   private lastSavedHash: string = '';
@@ -92,11 +94,13 @@ export class RoomSyncChannel {
     roomId: string,
     clientId: string,
     clientLabel: string,
+    clientColor: string,
     callbacks: SyncCallbacks
   ) {
     this.roomId = roomId;
     this.clientId = clientId;
     this.clientLabel = clientLabel;
+    this.clientColor = clientColor;
     this.callbacks = callbacks;
   }
 
@@ -135,6 +139,7 @@ export class RoomSyncChannel {
         filter: `id=eq.${this.roomId}`
       },
       (payload) => {
+        // ... (existing postgres_changes logic) ...
         console.info("[Sync] 📦 Database change:", payload.eventType);
         
         if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
@@ -156,6 +161,17 @@ export class RoomSyncChannel {
       }
     );
 
+    // Broadcast for high-frequency cursor updates
+    this.channel.on(
+      'broadcast',
+      { event: 'cursor-pos' },
+      (payload) => {
+        if (payload.payload.id !== this.clientId) {
+          this.callbacks.onCursorMove(payload.payload.id, payload.payload.x, payload.payload.y);
+        }
+      }
+    );
+
     // Presence for showing who's online/typing
     this.channel.on('presence', { event: 'sync' }, () => {
       const state = this.channel?.presenceState() || {};
@@ -163,7 +179,7 @@ export class RoomSyncChannel {
         id: p.clientId,
         label: p.clientLabel,
         isTyping: p.isTyping || false,
-        cursor: p.cursor,
+        color: p.color || '#000000',
       }));
       this.callbacks.onPresenceUpdate(users);
     });
@@ -181,6 +197,7 @@ export class RoomSyncChannel {
           clientId: this.clientId,
           clientLabel: this.clientLabel,
           isTyping: false,
+          color: this.clientColor,
           joinedAt: Date.now(),
         });
       } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
@@ -195,13 +212,22 @@ export class RoomSyncChannel {
   }
 
   // Update presence (typing indicator)
-  updatePresence(isTyping: boolean, cursor?: { x: number; y: number }) {
+  updatePresence(isTyping: boolean) {
     this.channel?.track({
       clientId: this.clientId,
       clientLabel: this.clientLabel,
       isTyping,
-      cursor,
+      color: this.clientColor,
       joinedAt: Date.now(),
+    });
+  }
+
+  // Send cursor position via Broadcast (faster, ephemeral)
+  sendCursor(x: number, y: number) {
+    this.channel?.send({
+      type: 'broadcast',
+      event: 'cursor-pos',
+      payload: { id: this.clientId, x, y }
     });
   }
 
