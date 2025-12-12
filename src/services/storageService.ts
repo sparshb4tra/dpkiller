@@ -15,6 +15,15 @@ const WELCOME_MESSAGES = [
 const getRandomWelcome = () =>
   WELCOME_MESSAGES[Math.floor(Math.random() * WELCOME_MESSAGES.length)];
 
+const ADJECTIVES = ["Happy", "Quiet", "Bright", "Swift", "Calm", "Eager", "Wise", "Bold"];
+const ANIMALS = ["Fox", "Owl", "Bear", "Cat", "Wolf", "Hawk", "Lion", "Tiger"];
+
+const generateName = () => {
+  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+  const animal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
+  return `${adj} ${animal}`;
+};
+
 export const getClientIdentity = (): { id: string; label: string } => {
   let id = localStorage.getItem(CLIENT_ID_KEY);
   let label = localStorage.getItem(CLIENT_LABEL_KEY);
@@ -24,8 +33,8 @@ export const getClientIdentity = (): { id: string; label: string } => {
     localStorage.setItem(CLIENT_ID_KEY, id);
   }
 
-  if (!label) {
-    label = `Guest-${id}`;
+  if (!label || label.startsWith('Guest-')) {
+    label = generateName();
     localStorage.setItem(CLIENT_LABEL_KEY, label);
   }
 

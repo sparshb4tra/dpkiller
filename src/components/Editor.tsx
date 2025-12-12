@@ -28,12 +28,31 @@ const Editor: React.FC<EditorProps> = ({
   const getMetaText = () => {
     if (typingUsers.length > 0) {
       const names = typingUsers.map(u => u.label).join(', ');
-      return `${names} typing...`;
+      return (
+        <span className="flex items-center gap-2 text-[var(--accent)] font-medium">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--accent)] opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--accent)]"></span>
+          </span>
+          {names} is typing...
+        </span>
+      );
     }
+    
     if (lastEditor && lastEditor.id !== clientId) {
-      return `Last edit by ${lastEditor.label}`;
+      return (
+        <span className="text-slate-400 dark:text-slate-500 text-xs">
+          Last edit by <span className="font-medium text-slate-600 dark:text-slate-300">{lastEditor.label}</span>
+        </span>
+      );
     }
-    return 'Start typing...';
+    
+    // Default state: show online count or nothing (cleaner)
+    if (onlineUsers.length > 0) {
+      return null; // Let the online count be the only thing shown
+    }
+    
+    return null;
   };
 
   return (
@@ -49,15 +68,14 @@ const Editor: React.FC<EditorProps> = ({
       />
       
       {/* Meta info - shows typing status or last editor */}
-      <div className={`editor-meta ${typingUsers.length > 0 ? 'animate-pulse' : ''}`}>
+      <div className="editor-meta absolute top-0 right-0 p-3 flex items-center gap-3 pointer-events-none">
         {onlineUsers.length > 0 && (
-          <span className="mr-2">
+          <span className="text-xs text-slate-400 dark:text-slate-500 font-medium bg-slate-100 dark:bg-slate-800/50 px-2 py-1 rounded-full">
             {onlineUsers.length} online
           </span>
         )}
-        <span className={typingUsers.length > 0 ? 'text-[var(--accent)]' : ''}>
-          {getMetaText()}
-        </span>
+        
+        {getMetaText()}
       </div>
     </div>
   );
