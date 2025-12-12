@@ -108,7 +108,12 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
                   
                   return incomingRoom;
                 });
-                setLastEditor({ id: 'remote', label: 'Someone' });
+                // Use the actual last editor from the room data if available
+                if (incomingRoom.lastEditor) {
+                  setLastEditor(incomingRoom.lastEditor);
+                } else {
+                  setLastEditor({ id: 'remote', label: 'Someone' });
+                }
               } else {
                 console.info("[PadAI] Skipping update - user is typing");
               }

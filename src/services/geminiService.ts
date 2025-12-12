@@ -63,9 +63,19 @@ User Query: ${userPrompt}
     
     return fullText;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini API Error:", error);
-    const errorText = "Error: Unable to reach AI service.";
+    
+    let errorText = "Error: Unable to reach AI service.";
+    
+    if (!API_KEY) {
+      errorText = "Error: Missing API Key. Please check VITE_API_KEY in your .env file.";
+    } else if (error.message?.includes('429')) {
+      errorText = "Error: AI quota exceeded. Please try again later.";
+    } else if (error.message?.includes('403')) {
+      errorText = "Error: API Key invalid or restricted.";
+    }
+    
     onChunk(errorText);
     return errorText;
   }
