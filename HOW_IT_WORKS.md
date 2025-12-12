@@ -7,7 +7,7 @@ This document explains the technical architecture and data flow of the PadAI app
 The application is built using three main components:
 1. **Frontend:** React (TypeScript) running on the user's browser.
 2. **Backend/Database:** Supabase (PostgreSQL) for storing data and real-time syncing.
-3. **AI Service:** Google Gemini API for generating chat responses.
+3. **AI Service:** Groq API (Llama 3) for fast chat responses.
 
 ## 1. Room System
 
@@ -38,7 +38,7 @@ The chat system integrates directly with the document context.
 
 1. **User Asks:** You type a message in the chat.
 2. **Context Packaging:** The application takes your message AND the current text in the notepad.
-3. **API Call:** It sends both to Google Gemini API. The prompt instructs the AI to answer your question based on the context of your notes.
+3. **API Call:** It sends both to Groq API.
 4. **Streaming Response:** The AI's response is "streamed" back chunk by chunk. As each word arrives, it is displayed on the screen and saved to the room history so other users can see the AI typing in real-time.
 
 ## 4. Mobile Layout Handling

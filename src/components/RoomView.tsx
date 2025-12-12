@@ -4,7 +4,7 @@ import Editor from './Editor';
 import Chat from './Chat';
 import { RoomData, ChatMessage, MessageRole } from '../types';
 import { getRoom as getRoomLocal, saveRoom as saveRoomLocal, getClientIdentity } from '../services/storageService';
-import { streamAIResponse } from '../services/geminiService';
+import { streamAIResponse } from '../services/groqService';
 import { RoomSyncChannel, hasSupabase, upsertRoom, createDefaultRoom, fetchRoom } from '../services/syncService';
 
 interface RoomViewProps {
