@@ -12,6 +12,7 @@ interface HeaderProps {
   isNotesOpen: boolean;
   isConnected?: boolean;
   onlineCount?: number;
+  onClearChat: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ 
@@ -26,6 +27,7 @@ const Header: React.FC<HeaderProps> = ({
   isNotesOpen,
   isConnected = false,
   onlineCount = 0,
+  onClearChat,
 }) => {
   return (
     <header className="fixed top-0 left-0 right-0 h-14 border-b border-gray-200 dark:border-[var(--border-muted)] flex items-center justify-between px-3 sm:px-4 bg-white dark:bg-[var(--bg-surface)] z-30">
@@ -97,6 +99,15 @@ const Header: React.FC<HeaderProps> = ({
           title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
         >
           {isDark ? "Light" : "Dark"}
+        </button>
+
+        {/* Clear Chat - Text Only (Red) */}
+        <button 
+          onClick={onClearChat}
+          className="text-sm font-bold text-[#a31221] hover:opacity-80 transition-colors ml-1"
+          title="Clear AI Chat History"
+        >
+          Clear
         </button>
       </div>
     </header>

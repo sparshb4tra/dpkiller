@@ -363,6 +363,13 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
         isNotesOpen={isNotesOpen}
         isConnected={isConnected}
         onlineCount={onlineUsers.length}
+        onClearChat={() => {
+          if (!data) return;
+          const clearedData = { ...data, messages: [] };
+          setData(clearedData);
+          saveRoomLocal(clearedData);
+          syncChannelRef.current?.immediateSave(clearedData);
+        }}
       />
 
       <div ref={containerRef} className="flex-1 flex overflow-hidden relative p-0 sm:p-4 lg:p-6 sm:gap-4 mt-14">
