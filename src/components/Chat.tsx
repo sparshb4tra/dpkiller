@@ -123,10 +123,6 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
       <div 
         ref={messagesContainerRef}
         className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 space-y-4"
-        style={{
-          // Only add bottom padding for the input area, header is handled by parent margin
-          paddingBottom: keyboardHeight > 0 ? '80px' : '80px', 
-        }}
       >
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 text-sm p-8 text-center opacity-80">
@@ -142,8 +138,12 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
         
         {messages.map((msg, index) => {
           const isAI = msg.role === MessageRole.MODEL;
-          // A message is "mine" if I sent it (for styling)
+          // A message is "mine" if I sent it
           const isMe = msg.senderId === clientId;
+          
+          // Determine if it's "Human" (me or another user) vs AI
+          const isHuman = !isAI;
+
           // Determine label: "You" if me, specific name if other user, "AI Assistant" if AI
           const label = isAI ? 'AI Assistant' : (isMe ? 'You' : (msg.senderLabel || 'User'));
           
@@ -152,11 +152,11 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
           return (
             <div
               key={msg.id}
-              className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} animate-in fade-in duration-300 slide-in-from-bottom-2`}
+              className={`flex flex-col ${isHuman ? 'items-end' : 'items-start'} animate-in fade-in duration-300 slide-in-from-bottom-2`}
             >
               {/* Label */}
                 {showLabel && (
-                <div className={`text-[11px] font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-1.5 px-1 uppercase ${isMe ? 'text-right' : 'text-left'}`}>
+                <div className={`text-[11px] font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-1.5 px-1 uppercase ${isHuman ? 'text-right' : 'text-left'}`}>
                   {label}
                   </div>
                 )}
@@ -169,7 +169,7 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
                     ? 'bg-[var(--accent)] text-white rounded-2xl rounded-tr-sm' 
                     : (isAI 
                         ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-100 dark:border-slate-700 rounded-2xl rounded-tl-sm'
-                        : 'bg-slate-100 dark:bg-slate-700/50 text-slate-800 dark:text-slate-100 rounded-2xl rounded-tl-sm') // Style for other users
+                        : 'bg-emerald-600 text-white rounded-2xl rounded-tr-sm') // Others: Green/Emerald on Right
                   }
                 `}
                 >
@@ -198,18 +198,14 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
         <div ref={messagesEndRef} className="h-4" />
       </div>
 
-      {/* ROBUST INPUT AREA - Fixed to bottom */}
+      {/* STANDARD INPUT AREA - Flex Item */}
       <div 
-        className="absolute bottom-0 left-0 right-0 bg-white dark:bg-[var(--bg-surface)] border-t border-gray-100 dark:border-[var(--border-muted)] z-20"
+        className="bg-white dark:bg-[var(--bg-surface)] border-t border-gray-100 dark:border-[var(--border-muted)] z-20 shrink-0"
         style={{
-          // Use fixed positioning relative to visual viewport when keyboard is open
-          position: keyboardHeight > 0 ? 'fixed' : 'absolute',
-          bottom: keyboardHeight > 0 ? `${keyboardHeight}px` : '0',
-          paddingBottom: keyboardHeight > 0 ? '12px' : 'max(16px, env(safe-area-inset-bottom))',
+          paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
           paddingTop: '12px',
           paddingLeft: '16px',
           paddingRight: '16px',
-          width: '100%',
         }}
       >
         <form onSubmit={handleSubmit} className="flex items-end gap-2 max-w-4xl mx-auto">
