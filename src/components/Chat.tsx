@@ -12,7 +12,7 @@ interface ChatProps {
 
 const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientId }) => {
   const [input, setInput] = useState('');
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -31,31 +31,38 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading]);
+  }, [messages, isLoading, keyboardHeight]);
 
-  // Handle mobile keyboard visibility using visualViewport API
+  // ROBUST MOBILE KEYBOARD HANDLING
   useEffect(() => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
+    if (!window.visualViewport) return;
 
     const handleResize = () => {
-      // If viewport height is significantly less than window height, keyboard is open
-      const isKeyboard = viewport.height < window.innerHeight * 0.75;
-      setKeyboardVisible(isKeyboard);
+      const viewport = window.visualViewport!;
+      const windowHeight = window.innerHeight;
+      const viewportHeight = viewport.height;
       
-      // When keyboard opens, scroll to keep messages visible
-      if (isKeyboard) {
-        setTimeout(() => {
-          scrollToBottom();
-        }, 100);
+      // Calculate keyboard height
+      const diff = windowHeight - viewportHeight;
+      const isKeyboardOpen = diff > 150; // Threshold for keyboard
+      
+      setKeyboardHeight(isKeyboardOpen ? diff : 0);
+      
+      if (isKeyboardOpen) {
+        setTimeout(scrollToBottom, 100);
       }
     };
 
-    viewport.addEventListener('resize', handleResize);
-    return () => viewport.removeEventListener('resize', handleResize);
+    window.visualViewport.addEventListener('resize', handleResize);
+    window.visualViewport.addEventListener('scroll', handleResize);
+    
+    return () => {
+      window.visualViewport?.removeEventListener('resize', handleResize);
+      window.visualViewport?.removeEventListener('scroll', handleResize);
+    };
   }, []);
 
-  // Focus input on mount (desktop only to avoid keyboard popup on mobile)
+  // Focus input on mount (desktop only)
   useEffect(() => {
     if (window.innerWidth >= 640) {
       inputRef.current?.focus();
@@ -67,31 +74,30 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
     if (!input.trim() || isLoading) return;
     onSendMessage(input);
     setInput('');
-    // Keep focus on input after sending
     inputRef.current?.focus();
   };
 
-  const handleFocus = () => {
-    // Scroll to bottom when input is focused (keyboard will open)
-    setTimeout(() => {
-      scrollToBottom();
-    }, 300);
-  };
-
   return (
-    <div className="flex flex-col h-full bg-[var(--bg-page)] sm:bg-white dark:bg-[var(--bg-surface)] text-[var(--text-primary)] overflow-hidden">
-      {/* Messages Area */}
+    <div className="flex flex-col h-full bg-[#f8fafc] sm:bg-white dark:bg-[var(--bg-surface)] text-[var(--text-primary)] relative">
+      
+      {/* Messages Scroll Area */}
       <div 
         ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-4 pt-4 pb-2 space-y-2"
+        className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-4 pb-4 space-y-4"
         style={{
-          // Add extra padding on mobile to account for header
-          paddingTop: window.innerWidth < 640 ? '16px' : '16px',
+          // Add padding bottom equal to input height + keyboard
+          paddingBottom: keyboardHeight > 0 ? '80px' : '80px', 
         }}
       >
         {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-[var(--text-secondary)] text-sm p-6 text-center opacity-70">
-             <p>Ask AI about your notes.</p>
+          <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 text-sm p-8 text-center opacity-80">
+            <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-3">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+              </svg>
+            </div>
+             <p className="font-medium">Start a new chat</p>
+             <p className="text-xs mt-1">AI has context of your notes</p>
           </div>
         )}
         
@@ -103,81 +109,87 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
           return (
             <div
               key={msg.id}
-              className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+              className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} animate-in fade-in duration-300 slide-in-from-bottom-2`}
             >
-              <div className={`max-w-[85%] sm:max-w-[80%] ${showLabel ? 'mt-2' : ''}`}>
-                {/* Label */}
-                {showLabel && (
-                  <div className={`text-[10px] uppercase tracking-wide text-gray-400 mb-1 ${isUser ? 'text-right pr-1' : 'pl-1'}`}>
-                    {isAI ? 'AI' : 'You'}
-                  </div>
-                )}
-                {/* Bubble */}
-                <div
-                  className="px-3 py-2 text-[15px] leading-relaxed break-words rounded-2xl"
-                  style={{
-                    backgroundColor: isUser ? 'var(--accent)' : 'var(--bubble-ai-bg)',
-                    color: isUser ? 'white' : 'var(--bubble-ai-text)',
-                    borderBottomRightRadius: isUser ? '6px' : undefined,
-                    borderBottomLeftRadius: !isUser ? '6px' : undefined,
-                  }}
-                >
-                  <div
-                    className="bubble-content"
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
-                  />
+              {/* Label */}
+              {showLabel && (
+                <div className={`text-[11px] font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-1.5 px-1 uppercase ${isUser ? 'text-right' : 'text-left'}`}>
+                  {isAI ? 'AI Assistant' : 'You'}
                 </div>
+              )}
+              
+              {/* Bubble */}
+              <div
+                className={`
+                  px-4 py-3 text-[15px] leading-relaxed break-words max-w-[85%] sm:max-w-[80%] shadow-sm
+                  ${isUser 
+                    ? 'bg-[var(--accent)] text-white rounded-2xl rounded-tr-sm' 
+                    : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-100 dark:border-slate-700 rounded-2xl rounded-tl-sm'}
+                `}
+              >
+                <div
+                  className="bubble-content markdown-body"
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
+                />
               </div>
+              
+              {/* Timestamp (optional, maybe on hover?) */}
             </div>
           );
         })}
         
         {isLoading && (
-          <div className="flex justify-start">
-            <div className="max-w-[80%]">
-              <div className="bg-gray-100 dark:bg-gray-800 px-4 py-3 rounded-2xl rounded-bl-md">
-                <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                </div>
+          <div className="flex justify-start animate-in fade-in duration-300">
+            <div className="bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 px-4 py-3 rounded-2xl rounded-tl-sm shadow-sm">
+              <div className="flex gap-1.5">
+                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></div>
+                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
               </div>
             </div>
           </div>
         )}
-        <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} className="h-4" />
       </div>
 
-      {/* Input Area - Fixed at bottom */}
+      {/* ROBUST INPUT AREA - Fixed to bottom */}
       <div 
-        className="shrink-0 px-3 sm:px-4 py-3 bg-[var(--bg-page)] sm:bg-white dark:bg-[var(--bg-surface)] border-t border-gray-200 dark:border-[var(--border-muted)]"
+        className="absolute bottom-0 left-0 right-0 bg-white dark:bg-[var(--bg-surface)] border-t border-gray-100 dark:border-[var(--border-muted)] z-20"
         style={{
-          paddingBottom: keyboardVisible ? '12px' : 'max(16px, env(safe-area-inset-bottom, 16px))',
+          // Adjust for keyboard on mobile if needed, though visualViewport usually handles the layout resize
+          // If using resize strategy, the container height shrinks, so bottom-0 is correct.
+          paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+          paddingTop: '12px',
+          paddingLeft: '16px',
+          paddingRight: '16px',
         }}
       >
-        <form onSubmit={handleSubmit} className="flex items-center gap-2">
-          <div className="flex-1 flex items-center bg-white dark:bg-gray-800 rounded-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 focus-within:border-[var(--accent)] transition-colors">
+        <form onSubmit={handleSubmit} className="flex items-end gap-2 max-w-4xl mx-auto">
+          <div className="flex-1 bg-slate-100 dark:bg-slate-800/50 rounded-2xl border border-transparent focus-within:border-[var(--accent)] focus-within:bg-white dark:focus-within:bg-slate-800 transition-all duration-200">
             <input
               ref={inputRef}
               type="text"
-              className="flex-1 bg-transparent text-[16px] focus:outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500 text-[var(--text-primary)] min-w-0"
-              placeholder="Message..."
+              className="w-full bg-transparent px-4 py-3 text-[16px] text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none min-h-[44px]"
+              placeholder="Message AI..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={isLoading}
-              onFocus={handleFocus}
-              // Prevent zoom on iOS
-              style={{ fontSize: '16px' }}
+              style={{ fontSize: '16px' }} // Prevents iOS zoom
+              autoComplete="off"
             />
           </div>
           <button
             type="submit"
             disabled={!input.trim() || isLoading}
-            className="w-10 h-10 rounded-full bg-[var(--accent)] text-white flex items-center justify-center disabled:opacity-30 hover:opacity-80 transition-opacity shrink-0"
+            className="w-[44px] h-[44px] rounded-full bg-[var(--accent)] text-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 active:scale-95 transition-all shadow-sm shrink-0 mb-[1px]"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-              <path d="M3.105 2.289a.75.75 0 00-.826.95l1.414 4.925A1.5 1.5 0 005.135 9.25h6.115a.75.75 0 010 1.5H5.135a1.5 1.5 0 00-1.442 1.086l-1.414 4.926a.75.75 0 00.826.95 28.896 28.896 0 0015.293-7.154.75.75 0 000-1.115A28.897 28.897 0 003.105 2.289z" />
-            </svg>
+            {isLoading ? (
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 ml-0.5">
+                <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+              </svg>
+            )}
           </button>
         </form>
       </div>
