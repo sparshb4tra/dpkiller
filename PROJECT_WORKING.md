@@ -1,10 +1,10 @@
-# PadAI - Project Working Documentation
+# noteai - Project Working Documentation
 
 > **Reference document for AI assistants and future development**
 
 ## Overview
 
-PadAI is a real-time collaborative AI chat application with an integrated notepad, inspired by dontpad.com. Users can create/join rooms via URL (like `/#/myroom`) and collaborate in real-time.
+noteai is a real-time collaborative AI chat application with an integrated notepad, inspired by dontpad.com. Users can create/join rooms via URL (like `/#/myroom`) and collaborate in real-time.
 
 ## Core Features
 

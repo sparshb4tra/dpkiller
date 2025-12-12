@@ -1,6 +1,6 @@
-# How PadAI Works
+# How noteai Works
 
-This document explains the technical architecture and data flow of the PadAI application in simple terms.
+This document explains the technical architecture and data flow of the noteai application in simple terms.
 
 ## Core Architecture
 

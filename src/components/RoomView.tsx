@@ -62,7 +62,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
     clientIdRef.current = id;
     clientLabelRef.current = label;
 
-    console.info("[PadAI] Init", { roomId, clientId: id, hasSupabase });
+    console.info("[noteai] Init", { roomId, clientId: id, hasSupabase });
 
     // Accent color
     const existingAccent = localStorage.getItem('padai_accent');
@@ -89,7 +89,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
             onRoomUpdate: (incomingRoom, isRemote) => {
               if (!isRemote) return;
               
-              console.info("[PadAI] 📥 Remote update received");
+              console.info("[noteai] 📥 Remote update received");
               
               // Only update if we're not actively typing
               if (!isTypingRef.current) {
@@ -115,7 +115,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
                   setLastEditor({ id: 'remote', label: 'Someone' });
                 }
               } else {
-                console.info("[PadAI] Skipping update - user is typing");
+                console.info("[noteai] Skipping update - user is typing");
               }
             },
 
@@ -127,7 +127,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
             // Connection status
             onConnectionChange: (status) => {
               setIsConnected(status === 'connected');
-              console.info("[PadAI] Connection:", status);
+              console.info("[noteai] Connection:", status);
             },
           }
         );
@@ -149,7 +149,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
           };
           room = createDefaultRoom(roomId, welcomeMsg);
           await upsertRoom(room);
-          console.info("[PadAI] Created new room");
+          console.info("[noteai] Created new room");
         }
 
         setData(room);
@@ -161,7 +161,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
         const room = getRoomLocal(roomId);
         setData(room);
         setIsSaved(true);
-        console.info("[PadAI] Running in local-only mode");
+        console.info("[noteai] Running in local-only mode");
       }
     };
 
@@ -287,7 +287,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
     setData(withUserMsg);
 
     // SAVE IMMEDIATELY so other devices see the message
-    console.info("[PadAI] 📤 Saving message to sync...");
+    console.info("[noteai] 📤 Saving message to sync...");
     await syncChannelRef.current?.immediateSave(withUserMsg);
     
     setIsAILoading(true);

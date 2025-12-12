@@ -16,7 +16,7 @@ export const streamAIResponse = async (
       throw new Error("Missing VITE_GROQ_API_KEY");
     }
 
-    const systemInstruction = `You are an AI assistant embedded in a text editor named PadAI. 
+    const systemInstruction = `You are an AI assistant embedded in a text editor named noteai. 
     Your goal is to help the user write, edit, and understand their notes.
     Be concise, direct, and helpful. Use plain text or simple markdown.`;
 
@@ -92,7 +92,7 @@ export const streamAIResponse = async (
   } catch (error: any) {
     console.error("Groq API Error:", error);
     
-    let errorText = "Error: Unable to reach AI service.";
+    let errorText = `Error: ${error.message || "Unable to reach AI service."}`;
     
     if (error.message?.includes("Missing VITE_GROQ_API_KEY")) {
       errorText = "Error: Missing API Key. Set VITE_GROQ_API_KEY in .env";
@@ -100,6 +100,8 @@ export const streamAIResponse = async (
       errorText = "Error: Groq quota exceeded. Try again later.";
     } else if (error.message?.includes("401")) {
       errorText = "Error: Invalid Groq API Key.";
+    } else if (error.message?.includes("Failed to fetch")) {
+      errorText = "Error: Network error. Check your connection.";
     }
     
     onChunk(errorText);

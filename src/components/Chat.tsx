@@ -62,10 +62,38 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
     };
   }, []);
 
+  // Global key listener for auto-focus (desktop only)
+  useEffect(() => {
+    // Only on desktop/tablet (don't trigger virtual keyboard on mobile unexpectedly)
+    if (window.innerWidth < 640) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't interfere if user is typing in an input/textarea
+      if (document.activeElement?.tagName === 'INPUT' || 
+          document.activeElement?.tagName === 'TEXTAREA' ||
+          document.activeElement?.isContentEditable) {
+        return;
+      }
+
+      // Ignore modifiers keys, function keys, etc.
+      // We only want to capture actual typing characters
+      if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) {
+        return;
+      }
+
+      // Focus the input
+      inputRef.current?.focus();
+      // The character will be typed naturally because we don't preventDefault()
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Focus input on mount (desktop only)
   useEffect(() => {
     if (window.innerWidth >= 640) {
-      inputRef.current?.focus();
+    inputRef.current?.focus();
     }
   }, []);
 
@@ -112,25 +140,25 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
               className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} animate-in fade-in duration-300 slide-in-from-bottom-2`}
             >
               {/* Label */}
-              {showLabel && (
+                {showLabel && (
                 <div className={`text-[11px] font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-1.5 px-1 uppercase ${isUser ? 'text-right' : 'text-left'}`}>
                   {isAI ? 'AI Assistant' : 'You'}
-                </div>
-              )}
+                  </div>
+                )}
               
               {/* Bubble */}
-              <div
+                <div
                 className={`
                   px-4 py-3 text-[15px] leading-relaxed break-words max-w-[85%] sm:max-w-[80%] shadow-sm
                   ${isUser 
                     ? 'bg-[var(--accent)] text-white rounded-2xl rounded-tr-sm' 
                     : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-100 dark:border-slate-700 rounded-2xl rounded-tl-sm'}
                 `}
-              >
-                <div
+                >
+                  <div
                   className="bubble-content markdown-body"
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
-                />
+                    dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.text) }}
+                  />
               </div>
               
               {/* Timestamp (optional, maybe on hover?) */}
@@ -190,7 +218,7 @@ const Chat: React.FC<ChatProps> = ({ messages, onSendMessage, isLoading, clientI
             ) : (
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 ml-0.5">
                 <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
-              </svg>
+            </svg>
             )}
           </button>
         </form>
