@@ -18,6 +18,7 @@ interface OnlineUser {
   id: string;
   label: string;
   isTyping: boolean;
+  color: string;
 }
 
 const WELCOME_MESSAGES = [
@@ -50,7 +51,7 @@ const RoomView: React.FC<RoomViewProps> = ({ roomId, navigateHome }) => {
     .map(u => ({
       id: u.id,
       label: u.label,
-      color: (u as any).color, // Type assertion since OnlineUser might need update
+      color: u.color,
       x: cursorPositions[u.id].x,
       y: cursorPositions[u.id].y
     }));
